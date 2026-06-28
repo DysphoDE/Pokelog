@@ -1067,13 +1067,22 @@ function pokelog() {
 
         // Cardmarket-Suchlink zum echten Preis-Check. Bei JA mit EN/DE-Name,
         // und mit Sammlernummer ergaenzt -> deutlich praezisere Treffer.
-        cardmarketUrl() {
+        _priceQuery() {
             const cv = this.cardView;
-            if (!cv) return '#';
+            if (!cv) return '';
             const name = (cv.names && (cv.names.en || cv.names.de)) || cv.base.name || '';
             const localId = (cv.card && cv.card.localId) || cv.base.localId || '';
-            const q = (name + ' ' + localId).trim();
-            return 'https://www.cardmarket.com/de/Pokemon/Products/Search?searchString=' + encodeURIComponent(q);
+            return (name + ' ' + localId).trim();
+        },
+
+        // Cardmarket-Suche (EUR-Marktwert hierzulande) – fuer DE und JP.
+        cardmarketUrl() {
+            return 'https://www.cardmarket.com/de/Pokemon/Products/Search?searchString=' + encodeURIComponent(this._priceQuery());
+        },
+
+        // TCGplayer-Suche (Japan-Markt, USD) – Preisquelle fuer JP-Karten.
+        tcgplayerUrl() {
+            return 'https://www.tcgplayer.com/search/pokemon-japan/product?productLineName=pokemon-japan&q=' + encodeURIComponent(this._priceQuery());
         },
 
         // Merkt die zuletzt angesehenen Karten (lokal, max. 12).

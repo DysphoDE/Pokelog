@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/Config.php';
 require_once __DIR__ . '/Database.php';
 require_once __DIR__ . '/TcgdexClient.php';
+require_once __DIR__ . '/TcgPlayerJpClient.php';
 require_once __DIR__ . '/Japanese.php';
 
 /**
@@ -28,6 +29,12 @@ final class CollectionRepository
 
     /** @var array<string,TcgdexClient> Lazy erzeugte API-Clients je Sprache. */
     private array $clients = [];
+
+    /** Lazy erzeugter TCGplayer-JP-Client (Preise japanischer Karten). */
+    private ?TcgPlayerJpClient $jp = null;
+
+    /** Pro Request gecachter USD->EUR-Kurs. */
+    private ?float $fxRate = null;
 
     /** @var array<string,array<string,int>> Besitz-Map (lang => cardId => Menge), pro Request gecacht. */
     private array $ownedCache = [];
@@ -66,6 +73,83 @@ final class CollectionRepository
     {
         $lang = in_array($lang, ['de', 'ja', 'en'], true) ? $lang : 'de';
         return $this->clients[$lang] ??= new TcgdexClient($lang);
+    }
+
+    private function jpClient(): TcgPlayerJpClient
+    {
+        return $this->jp ??= new TcgPlayerJpClient();
+    }
+
+    // ------------------------------------------------ App-Metadaten (KV)
+
+    private function metaGet(string $key): ?string
+    {
+        $stmt = $this->db->prepare('SELECT value FROM app_meta WHERE key = ?');
+        $stmt->execute([$key]);
+        $v = $stmt->fetchColumn();
+        return $v === false ? null : (string) $v;
+    }
+
+    private function metaSet(string $key, string $value): void
+    {
+        $this->db->prepare(<<<'SQL'
+            INSERT INTO app_meta (key, value, updated_at) VALUES (:k, :v, :now)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+        SQL)->execute([':k' => $key, ':v' => $value, ':now' => time()]);
+    }
+
+    /**
+     * Aktueller USD->EUR-Wechselkurs (taeglich gecacht). Faellt bei
+     * Netzwerkproblemen auf den letzten bekannten bzw. einen festen Kurs zurueck.
+     */
+    private function usdToEur(): float
+    {
+        if ($this->fxRate !== null) {
+            return $this->fxRate;
+        }
+
+        $cached = $this->metaGet('fx_usd_eur');
+        $cachedAt = (int) ($this->metaGet('fx_usd_eur_at') ?? '0');
+        if ($cached !== null && (time() - $cachedAt) < Config::FX_TTL) {
+            return $this->fxRate = (float) $cached;
+        }
+
+        $rate = $this->fetchUsdEur();
+        if ($rate !== null && $rate > 0) {
+            $this->metaSet('fx_usd_eur', (string) $rate);
+            $this->metaSet('fx_usd_eur_at', (string) time());
+            return $this->fxRate = $rate;
+        }
+
+        // Kein frischer Kurs: letzter bekannter Wert, sonst Fallback.
+        return $this->fxRate = $cached !== null ? (float) $cached : Config::USD_EUR_FALLBACK;
+    }
+
+    private function fetchUsdEur(): ?float
+    {
+        foreach (Config::FX_ENDPOINTS as $url) {
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_CONNECTTIMEOUT => 6,
+                CURLOPT_TIMEOUT        => 12,
+                CURLOPT_ENCODING       => '',
+                CURLOPT_HTTPHEADER     => ['Accept: application/json'],
+            ]);
+            $body   = curl_exec($ch);
+            $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            if ($status < 200 || $status >= 300 || !is_string($body) || $body === '') {
+                continue;
+            }
+            $d = json_decode($body, true);
+            $eur = $d['rates']['EUR'] ?? null;
+            if (is_numeric($eur) && (float) $eur > 0) {
+                return (float) $eur;
+            }
+        }
+        return null;
     }
 
     /** Setzt den aktiven Benutzer; die Sammlung wird darauf eingeschraenkt. */
@@ -476,6 +560,7 @@ final class CollectionRepository
             'lowHolo'   => $num('low_holo'),
             'display'   => $trend,
             'cmUpdated' => $row['cm_updated'] ?? null,
+            'source'    => $row['source'] ?? null,
         ];
     }
 
@@ -1152,14 +1237,14 @@ final class CollectionRepository
         if ($card === null) {
             return null;
         }
-        $this->storeCard($card);
+        $this->storeCard($card, $lang);
         return $card;
     }
 
     /**
      * @param array<string,mixed> $card
      */
-    private function storeCard(array $card): void
+    private function storeCard(array $card, string $lang = 'de'): void
     {
         $now = time();
         $stmt = $this->db->prepare(<<<'SQL'
@@ -1188,14 +1273,22 @@ final class CollectionRepository
             ':updated_at' => $now,
         ]);
 
-        $this->storePriceFromCard($card, $now);
+        $this->storePriceFromCard($card, $now, $lang);
     }
 
     /**
+     * Speichert den eingebetteten Cardmarket-Preis (EUR). Fuer japanische
+     * Karten ist dieser Wert unbrauchbar (TCGdex mappt JA-Karten fehlerhaft),
+     * daher wird er bei lang='ja' uebersprungen - JA-Preise kommen ueber
+     * TCGplayer (siehe getJpPrices()).
+     *
      * @param array<string,mixed> $card
      */
-    private function storePriceFromCard(array $card, int $now): void
+    private function storePriceFromCard(array $card, int $now, string $lang = 'de'): void
     {
+        if ($lang === 'ja') {
+            return;
+        }
         $cm = $card['pricing']['cardmarket'] ?? null;
         if (!is_array($cm)) {
             return;
@@ -1294,6 +1387,10 @@ final class CollectionRepository
         SQL);
         $idStmt->execute([':uid' => $this->userId, ':cid' => $cardId, ':clang' => $catalogLang, ':v' => $variant, ':c' => $condition, ':l' => $language]);
         $id = (int) $idStmt->fetchColumn();
+
+        // Preis direkt bereitstellen, damit die Sammlung sofort einen Wert
+        // zeigt (DE: Cardmarket via storeCard; JA: TCGplayer via getJpPrices).
+        $this->getPrices([$cardId], $catalogLang);
 
         return $this->getItem($id);
     }
@@ -1461,7 +1558,7 @@ final class CollectionRepository
                 c.rarity, c.image, c.variants,
                 cx.image AS idx_image,
                 p.currency, p.low, p.avg, p.trend, p.avg7, p.avg30,
-                p.low_holo, p.avg_holo, p.trend_holo, p.fetched_at, p.cm_updated,
+                p.low_holo, p.avg_holo, p.trend_holo, p.fetched_at, p.cm_updated, p.source,
                 o.price AS override_price
             FROM collection_items ci
             JOIN cards c ON c.id = ci.card_id
@@ -1512,6 +1609,7 @@ final class CollectionRepository
                 'unitPrice' => $unit,
                 'lineValue' => $unit !== null ? round($unit * $qty, 2) : null,
                 'priceManual' => $manual,
+                'priceSource' => $r['source'] ?? null,
                 'priceFetchedAt' => $r['fetched_at'] !== null ? (int) $r['fetched_at'] : null,
                 'cmUpdated' => $r['cm_updated'],
                 'prices'    => [
@@ -1579,21 +1677,32 @@ final class CollectionRepository
             $cardId = (string) $row['card_id'];
             $lang = self::normLang((string) ($row['catalog_lang'] ?? 'de'));
             if ($onlyStale) {
-                $stmt = $this->db->prepare('SELECT fetched_at FROM card_prices WHERE card_id = ?');
+                $stmt = $this->db->prepare('SELECT fetched_at, source FROM card_prices WHERE card_id = ?');
                 $stmt->execute([$cardId]);
-                $fetchedAt = $stmt->fetchColumn();
-                if ($fetchedAt !== false && (int) $fetchedAt > $threshold) {
+                $existing = $stmt->fetch() ?: null;
+                $fresh = $existing !== null && (int) ($existing['fetched_at'] ?? 0) > $threshold;
+                // JA-Karten mit noch alter (falscher) Cardmarket-Quelle trotz
+                // Frische einmalig auf TCGplayer migrieren.
+                $needsJpMigration = $lang === 'ja'
+                    && ($existing['source'] ?? null) !== Config::JP_PRICE_SOURCE;
+                if ($fresh && !$needsJpMigration) {
                     $skipped++;
                     continue;
                 }
             }
             try {
+                if ($lang === 'ja') {
+                    // JA-Preise via TCGplayer (USD -> EUR) erzwingen.
+                    $this->getJpPrices([$cardId], true);
+                    $updated++;
+                    continue;
+                }
                 $card = $this->client($lang)->getCard($cardId);
                 if ($card === null) {
                     $failed++;
                     continue;
                 }
-                $this->storeCard($card);
+                $this->storeCard($card, $lang);
                 $updated++;
             } catch (Throwable $e) {
                 $failed++;
@@ -1624,6 +1733,12 @@ final class CollectionRepository
             return [];
         }
 
+        // Japanische Karten: Cardmarket/TCGdex liefert hier falsche Werte,
+        // daher eigener Pfad ueber TCGplayer (USD -> EUR).
+        if ($lang === 'ja') {
+            return $this->getJpPrices($ids);
+        }
+
         $now = time();
         $threshold = $now - Config::PRICE_TTL;
 
@@ -1648,7 +1763,7 @@ final class CollectionRepository
             try {
                 $cards = $this->client($lang)->getCards($toFetch);
                 foreach ($cards as $card) {
-                    $this->storeCard($card);
+                    $this->storeCard($card, $lang);
                 }
                 // Auch ohne Cardmarket-Preis als "geprueft" markieren, damit
                 // nicht bei jeder Ansicht erneut abgefragt wird.
@@ -1672,6 +1787,175 @@ final class CollectionRepository
             $out[$id] = $this->formatPriceRow($have[$id] ?? null);
         }
         return $out;
+    }
+
+    /**
+     * Preis-Pfad fuer japanische Karten: holt TCGplayer-Marktpreise (USD) via
+     * TCGcsv, rechnet sie in EUR um und cacht sie in card_prices (source
+     * 'tcgplayer-jp'). Set-Zuordnung ueber TCGdex set.id == TCGplayer-Abk.,
+     * Karten-Zuordnung ueber die Kartennummer.
+     *
+     * @param array<int,string> $ids
+     * @return array<string,array<string,mixed>|null>
+     */
+    private function getJpPrices(array $ids, bool $force = false): array
+    {
+        $now = time();
+        $threshold = $now - Config::PRICE_TTL;
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->db->prepare("SELECT * FROM card_prices WHERE card_id IN ($placeholders)");
+        $stmt->execute($ids);
+        $have = [];
+        foreach ($stmt->fetchAll() as $r) {
+            $have[(string) $r['card_id']] = $r;
+        }
+
+        $toFetch = [];
+        foreach ($ids as $id) {
+            $row = $have[$id] ?? null;
+            $stale = $row === null || (int) ($row['fetched_at'] ?? 0) <= $threshold;
+            // Noch nicht auf TCGplayer migrierte (alte Cardmarket-)Zeilen
+            // ebenfalls neu holen, auch wenn sie zeitlich "frisch" sind.
+            $needsMigration = $row !== null && ($row['source'] ?? null) !== Config::JP_PRICE_SOURCE;
+            if ($force || $stale || $needsMigration) {
+                $toFetch[] = $id;
+            }
+        }
+
+        if ($toFetch !== []) {
+            // Stammdaten (set_id + local_id) bereitstellen.
+            $meta = $this->cardMeta($toFetch);
+            $missingMeta = array_values(array_filter($toFetch, static fn($id) => !isset($meta[$id])));
+            if ($missingMeta !== []) {
+                try {
+                    $cards = $this->client('ja')->getCards($missingMeta);
+                    foreach ($cards as $card) {
+                        $this->storeCard($card, 'ja');
+                    }
+                } catch (Throwable $e) {
+                    // ignorieren -> diese Karten bleiben ohne Preis
+                }
+                $meta = $this->cardMeta($toFetch);
+            }
+
+            // Nach Set gruppieren, je Set einmal Preise holen.
+            $bySet = [];
+            foreach ($toFetch as $id) {
+                $setId = $meta[$id]['set_id'] ?? null;
+                if ($setId !== null && $setId !== '') {
+                    $bySet[$setId][] = $id;
+                }
+            }
+
+            $rate = $this->usdToEur();
+            foreach ($bySet as $setId => $setIds) {
+                $priceMap = null;
+                $fetchFailed = false;
+                try {
+                    $groupId = $this->jpClient()->resolveGroupId((string) $setId);
+                    if ($groupId !== null) {
+                        $priceMap = $this->jpClient()->setPrices($groupId);
+                    }
+                } catch (Throwable $e) {
+                    // Netzwerk-/Parsefehler: bestehende Preise NICHT ueberschreiben.
+                    $fetchFailed = true;
+                }
+                if ($fetchFailed) {
+                    continue;
+                }
+
+                foreach ($setIds as $id) {
+                    $localId = (string) ($meta[$id]['local_id'] ?? '');
+                    $num = TcgPlayerJpClient::normalizeNumber($localId);
+                    $entry = ($priceMap !== null && $num !== '') ? ($priceMap[$num] ?? null) : null;
+                    if ($entry === null) {
+                        // Keine Zuordnung -> als geprueft (TCGplayer) markieren,
+                        // aber ohne Preis, damit nicht bei jeder Ansicht erneut
+                        // versucht wird.
+                        $entry = ['plain' => null, 'plainLow' => null, 'holo' => null, 'holoLow' => null];
+                    }
+                    $this->storeJpPrice($id, $entry, $rate, $now);
+                }
+            }
+
+            // Frisch gespeicherte Preise nachladen.
+            $ph = implode(',', array_fill(0, count($toFetch), '?'));
+            $reload = $this->db->prepare("SELECT * FROM card_prices WHERE card_id IN ($ph)");
+            $reload->execute($toFetch);
+            foreach ($reload->fetchAll() as $r) {
+                $have[(string) $r['card_id']] = $r;
+            }
+        }
+
+        $out = [];
+        foreach ($ids as $id) {
+            $out[$id] = $this->formatPriceRow($have[$id] ?? null);
+        }
+        return $out;
+    }
+
+    /**
+     * Liest set_id + local_id der angegebenen Karten aus dem lokalen Cache.
+     *
+     * @param array<int,string> $ids
+     * @return array<string,array{set_id:?string,local_id:?string}>
+     */
+    private function cardMeta(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->db->prepare("SELECT id, set_id, local_id FROM cards WHERE id IN ($ph)");
+        $stmt->execute($ids);
+        $out = [];
+        foreach ($stmt->fetchAll() as $r) {
+            $out[(string) $r['id']] = [
+                'set_id'   => $r['set_id'] ?? null,
+                'local_id' => $r['local_id'] ?? null,
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Schreibt einen umgerechneten TCGplayer-JP-Preis in card_prices.
+     *
+     * @param array{plain:?float,plainLow:?float,holo:?float,holoLow:?float} $entry
+     */
+    private function storeJpPrice(string $cardId, array $entry, float $rate, int $now): void
+    {
+        $eur = static fn(?float $usd) => $usd !== null ? round($usd * $rate, 2) : null;
+
+        $this->db->prepare(<<<'SQL'
+            INSERT INTO card_prices
+                (card_id, currency, low, avg, trend, avg7, avg30,
+                 low_holo, avg_holo, trend_holo, avg7_holo, avg30_holo,
+                 source, cm_updated, fetched_at)
+            VALUES
+                (:card_id, 'EUR', :low, :avg, :trend, NULL, NULL,
+                 :low_holo, :avg_holo, :trend_holo, NULL, NULL,
+                 :source, NULL, :fetched_at)
+            ON CONFLICT(card_id) DO UPDATE SET
+                currency = 'EUR',
+                low = excluded.low, avg = excluded.avg, trend = excluded.trend,
+                avg7 = NULL, avg30 = NULL,
+                low_holo = excluded.low_holo, avg_holo = excluded.avg_holo,
+                trend_holo = excluded.trend_holo, avg7_holo = NULL, avg30_holo = NULL,
+                source = excluded.source, cm_updated = NULL,
+                fetched_at = excluded.fetched_at
+        SQL)->execute([
+            ':card_id'    => $cardId,
+            ':low'        => $eur($entry['plainLow']),
+            ':avg'        => $eur($entry['plain']),
+            ':trend'      => $eur($entry['plain']),
+            ':low_holo'   => $eur($entry['holoLow']),
+            ':avg_holo'   => $eur($entry['holo']),
+            ':trend_holo' => $eur($entry['holo']),
+            ':source'     => Config::JP_PRICE_SOURCE,
+            ':fetched_at' => $now,
+        ]);
     }
 
     private function touchPrice(string $id, int $now): void
@@ -1702,6 +1986,7 @@ final class CollectionRepository
             'low'       => $row['low'] !== null ? (float) $row['low'] : null,
             'trendHolo' => $row['trend_holo'] !== null ? (float) $row['trend_holo'] : null,
             'currency'  => $row['currency'] ?? Config::CURRENCY,
+            'source'    => $row['source'] ?? null,
         ];
     }
 

@@ -1337,7 +1337,7 @@ declare(strict_types=1);
                                 <span x-show="addBusy">…</span>
                             </button>
                             <p class="text-[11px] text-on-surface-variant leading-snug">
-                                Preis = Cardmarket-Trend der Karte (unabhängig von Druck-Sprache &amp; Zustand – diese werden nur als Info gespeichert).
+                                Preis = Markt-Trend der Karte – Cardmarket (EUR) für DE, TCGplayer (USD→EUR) für JP – unabhängig von Druck-Sprache &amp; Zustand (nur als Info gespeichert).
                             </p>
                         </div>
                     </div>
@@ -1366,9 +1366,14 @@ declare(strict_types=1);
                                 <h3 class="font-mono text-label-mono font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-2">
                                     <span class="material-symbols-outlined text-[18px] text-secondary fill-icon">sell</span> Preis
                                 </h3>
-                                <a :href="cardmarketUrl()" target="_blank" rel="noopener" class="font-mono text-[11px] text-secondary hover:underline flex items-center gap-1">
-                                    Auf Cardmarket prüfen <span class="material-symbols-outlined text-[14px]">open_in_new</span>
-                                </a>
+                                <div class="flex items-center gap-3">
+                                    <a :href="cardmarketUrl()" target="_blank" rel="noopener" class="font-mono text-[11px] text-secondary hover:underline flex items-center gap-1">
+                                        Cardmarket <span class="material-symbols-outlined text-[14px]">open_in_new</span>
+                                    </a>
+                                    <a x-show="cardView.lang === 'ja'" :href="tcgplayerUrl()" target="_blank" rel="noopener" class="font-mono text-[11px] text-secondary hover:underline flex items-center gap-1">
+                                        TCGplayer <span class="material-symbols-outlined text-[14px]">open_in_new</span>
+                                    </a>
+                                </div>
                             </div>
 
                             <!-- Eigener (manueller) Preis aktiv -->
@@ -1396,6 +1401,9 @@ declare(strict_types=1);
                                         </div>
                                     </template>
                                 </div>
+                                <p x-show="cardView.price && cardView.price.source === 'tcgplayer-jp'" class="mt-2 font-mono text-[10px] text-on-surface-variant leading-snug">
+                                    Quelle: TCGplayer (Japan-Markt), von USD in EUR umgerechnet – Cardmarket führt für japanische Karten keine verlässlichen Preise.
+                                </p>
                             </div>
                             <p x-show="!cardView.price && !cardView.loading && cardView.override == null" class="font-mono text-[11px] text-on-surface-variant">Kein Quellpreis verfügbar.</p>
 

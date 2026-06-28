@@ -11,7 +11,7 @@ require_once __DIR__ . '/Config.php';
 final class Database
 {
     /** Aktuelle Schema-Version (PRAGMA user_version). */
-    private const SCHEMA_VERSION = 5;
+    private const SCHEMA_VERSION = 6;
 
     private static ?PDO $pdo = null;
 
@@ -142,6 +142,16 @@ final class Database
         SQL);
 
         self::createCollectionItems($pdo);
+
+        // Schluessel/Wert-Speicher fuer Laufzeit-Metadaten (z. B. gecachter
+        // USD->EUR-Wechselkurs fuer japanische TCGplayer-Preise).
+        $pdo->exec(<<<'SQL'
+            CREATE TABLE IF NOT EXISTS app_meta (
+                key        TEXT PRIMARY KEY,
+                value      TEXT,
+                updated_at INTEGER NOT NULL
+            );
+        SQL);
 
         // Manuelle Preis-Korrekturen (uebersteuern die Quelle, z. B. wenn
         // TCGdex/Cardmarket eine JA-Karte falsch verknuepft). Pro Karten-ID.
