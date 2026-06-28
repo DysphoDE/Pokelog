@@ -135,15 +135,16 @@ declare(strict_types=1);
         .type-grass { background-color: rgba(25, 135, 84, 0.12); color: #198754; }
         .type-electric { background-color: rgba(255, 226, 74, 0.22); color: #4a3f00; }
 
-        /* Scanner-Ecken + Scanline (aus Mockup) */
+        /* Scanner-Ecken + Scanline (aus Mockup) – Farbe via currentColor */
+        .scanner-corners, .scanner-corners-bottom { color: #bc0100; }
         .scanner-corners::before, .scanner-corners::after,
         .scanner-corners-bottom::before, .scanner-corners-bottom::after {
             content: ''; position: absolute; width: 36px; height: 36px;
         }
-        .scanner-corners::before { top: 0; left: 0; border-top: 4px solid #bc0100; border-left: 4px solid #bc0100; border-top-left-radius: 14px; }
-        .scanner-corners::after { top: 0; right: 0; border-top: 4px solid #bc0100; border-right: 4px solid #bc0100; border-top-right-radius: 14px; }
-        .scanner-corners-bottom::before { bottom: 0; left: 0; border-bottom: 4px solid #bc0100; border-left: 4px solid #bc0100; border-bottom-left-radius: 14px; }
-        .scanner-corners-bottom::after { bottom: 0; right: 0; border-bottom: 4px solid #bc0100; border-right: 4px solid #bc0100; border-bottom-right-radius: 14px; }
+        .scanner-corners::before { top: 0; left: 0; border-top: 4px solid currentColor; border-left: 4px solid currentColor; border-top-left-radius: 14px; }
+        .scanner-corners::after { top: 0; right: 0; border-top: 4px solid currentColor; border-right: 4px solid currentColor; border-top-right-radius: 14px; }
+        .scanner-corners-bottom::before { bottom: 0; left: 0; border-bottom: 4px solid currentColor; border-left: 4px solid currentColor; border-bottom-left-radius: 14px; }
+        .scanner-corners-bottom::after { bottom: 0; right: 0; border-bottom: 4px solid currentColor; border-right: 4px solid currentColor; border-bottom-right-radius: 14px; }
         @keyframes scanline { 0% { top: 0; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
         .scan-line { animation: scanline 3s linear infinite; }
 
@@ -977,14 +978,27 @@ declare(strict_types=1);
                     <video x-ref="video" autoplay playsinline muted class="h-full w-full object-cover" :class="cameraActive ? '' : 'opacity-30'"></video>
                     <template x-if="cameraActive">
                         <div class="absolute inset-0 pointer-events-none">
-                            <div class="scanner-corners absolute inset-4 z-30"></div>
-                            <div class="scanner-corners-bottom absolute inset-4 z-30"></div>
-                            <div class="scan-line absolute left-4 right-4 h-1 bg-primary shadow-[0_0_15px_rgba(188,1,0,0.8)] z-20"></div>
-                            <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-40 z-30">
-                                <span class="material-symbols-outlined text-white text-3xl">add</span>
+                            <!-- Rahmen, faerbt sich bei Treffer gruen -->
+                            <div class="scanner-corners absolute inset-4 z-30 transition-colors" :class="scanStatus === 'found' ? 'text-success' : ''"></div>
+                            <div class="scanner-corners-bottom absolute inset-4 z-30 transition-colors" :class="scanStatus === 'found' ? 'text-success' : ''"></div>
+                            <!-- Such-Linie nur waehrend aktiver Erkennung -->
+                            <div x-show="scanStatus !== 'found'" class="scan-line absolute left-4 right-4 h-1 bg-primary shadow-[0_0_15px_rgba(188,1,0,0.8)] z-20"></div>
+                            <!-- Nummern-Fokuszone unten -->
+                            <div class="absolute left-6 right-6 bottom-6 h-[18%] border-2 border-dashed border-white/40 rounded-lg z-20"></div>
+
+                            <!-- Status-Pille oben -->
+                            <div class="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold backdrop-blur-md"
+                                :class="scanStatus === 'found' ? 'bg-success/90 text-white' : (scanStatus === 'nomatch' ? 'bg-error/80 text-white' : 'bg-black/55 text-white')">
+                                <span x-show="scanStatus === 'found'" class="material-symbols-outlined text-[15px] fill-icon">check_circle</span>
+                                <span x-show="scanStatus !== 'found'" class="h-2 w-2 rounded-full bg-white animate-ping"></span>
+                                <span x-text="scanStatus === 'found' ? 'Erkannt' : (scanStatus === 'nomatch' ? 'Kein Treffer' : 'Suche…')"></span>
                             </div>
                         </div>
                     </template>
+                    <!-- Hinweistext unten im Sucher -->
+                    <div x-show="cameraActive && scanHint" class="absolute inset-x-0 bottom-0 z-30 p-2 bg-gradient-to-t from-black/70 to-transparent">
+                        <p class="text-center text-[12px] leading-snug text-white px-2" x-text="scanHint"></p>
+                    </div>
                     <div x-show="!cameraActive" class="absolute inset-0 flex flex-col items-center justify-center text-inverse-on-surface/70 text-body-sm gap-2 px-6 text-center">
                         <span class="material-symbols-outlined text-[40px]">photo_camera</span>
                         Kamera aus
@@ -995,19 +1009,24 @@ declare(strict_types=1);
                 <!-- Steuerung & Status -->
                 <div class="flex flex-col gap-4">
                     <div>
-                        <h3 class="text-title-md font-semibold text-on-background">Karte scannen</h3>
-                        <p class="text-body-sm text-on-surface-variant mt-1">Richte die Karte im Rahmen aus. Die <span class="font-semibold text-on-surface">Kartennummer</span> (z. B. 136/189) muss scharf &amp; gut lesbar sein.</p>
+                        <h3 class="text-title-md font-semibold text-on-background">Live-Scan</h3>
+                        <p class="text-body-sm text-on-surface-variant mt-1">Halte die Karte einfach vor die Kamera – sie wird <span class="font-semibold text-on-surface">automatisch erkannt</span>, kein Knopfdruck nötig. Am besten die <span class="font-semibold text-on-surface">Sammlernummer</span> (z. B. 136/189) in den unteren Rahmen.</p>
                     </div>
                     <div class="flex flex-wrap gap-2">
                         <button x-show="!cameraActive" @click="startCamera()"
                             class="px-4 py-2.5 rounded-lg bg-primary text-on-primary text-sm font-bold uppercase tracking-wide flex items-center gap-2 hover:shadow-md transition-all">
                             <span class="material-symbols-outlined text-[20px]">photo_camera</span> Kamera starten
                         </button>
+                        <button x-show="cameraActive && torchSupported" @click="toggleTorch()"
+                            class="px-4 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors"
+                            :class="torchOn ? 'bg-tertiary text-on-tertiary' : 'bg-surface-container hover:bg-surface-variant text-on-surface'">
+                            <span class="material-symbols-outlined text-[20px]" x-text="torchOn ? 'flashlight_on' : 'flashlight_off'"></span> Licht
+                        </button>
                         <button x-show="cameraActive" @click="captureAndScan()" :disabled="scanning"
-                            class="px-4 py-2.5 rounded-lg bg-primary text-on-primary text-sm font-bold uppercase tracking-wide flex items-center gap-2 disabled:opacity-50 hover:shadow-md transition-all">
+                            class="px-4 py-2.5 rounded-lg bg-surface-container hover:bg-surface-variant text-on-surface text-sm font-bold flex items-center gap-2 disabled:opacity-50 transition-colors">
                             <span class="material-symbols-outlined text-[20px]">document_scanner</span>
-                            <span x-show="!scanning">Karte scannen</span>
-                            <span x-show="scanning">Analysiere… <span class="font-mono" x-text="scanProgress"></span></span>
+                            <span x-show="!scanning">Foto erzwingen</span>
+                            <span x-show="scanning">Analysiere…</span>
                         </button>
                         <button x-show="cameraActive" @click="stopCamera()"
                             class="px-4 py-2.5 rounded-lg bg-surface-container hover:bg-surface-variant text-on-surface text-sm font-bold flex items-center gap-2 transition-colors">
@@ -1019,14 +1038,19 @@ declare(strict_types=1);
                         <span class="material-symbols-outlined text-[18px] shrink-0">error</span>
                         <span x-text="scanError"></span>
                     </div>
-                    <div x-show="ocrText" class="font-mono text-label-mono text-on-surface-variant bg-surface-container-low rounded-lg p-3 break-words">
-                        Erkannt: <span class="text-on-surface" x-text="ocrSummary"></span>
+                    <div x-show="ocrSummary" class="font-mono text-label-mono text-on-surface-variant bg-surface-container-low rounded-lg p-3 break-words">
+                        Gelesen: <span class="text-on-surface" x-text="ocrSummary"></span>
                     </div>
                 </div>
             </div>
 
             <div x-show="scanMatches.length > 0" class="space-y-3">
-                <h3 class="text-title-md font-semibold text-on-background">Treffer – tippe zum Hinzufügen</h3>
+                <div class="flex items-center justify-between gap-2">
+                    <h3 class="text-title-md font-semibold text-on-background">Treffer – tippe zum Hinzufügen</h3>
+                    <button @click="rescan()" class="px-3 py-1.5 rounded-lg bg-primary text-on-primary text-sm font-bold flex items-center gap-1.5 hover:shadow-md transition-all shrink-0">
+                        <span class="material-symbols-outlined text-[18px]">restart_alt</span> Weiter scannen
+                    </button>
+                </div>
                 <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-3 md:gap-gutter">
                     <template x-for="r in scanMatches" :key="r.id">
                         <button @click="openCard(r)" class="zx-card text-left bg-surface-container-lowest rounded-xl border zx-shadow overflow-hidden flex flex-col group" :class="r.owned > 0 ? 'border-success ring-1 ring-success' : 'border-outline-variant'">

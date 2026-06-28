@@ -11,8 +11,10 @@ Gebaut mit **PHP (ohne Build-Schritt)**, **SQLite**, **Tailwind CSS (CDN)**,
 
 ## Features
 
-- 📷 **Scannen per Kamera** – Karte vor die Kamera halten, OCR liest Name +
-  Kartennummer (z. B. `136/189`) und schlägt passende Karten vor.
+- 📷 **Live-Scan per Kamera** – Karte einfach vor die Kamera halten (kein
+  Knopfdruck): OCR liest die Sammlernummer (z. B. `136/189`) und matcht sie
+  über Nummer + Set-Gesamtzahl sofort im lokalen Index. Wählt automatisch die
+  Haupt-Rückkamera (Zoom 1x), optional mit Taschenlampe.
 - 🔍 **Blitzschnelle Suche (lokal, keine Live-API-Calls)** – dank lokalem
   Karten-Index über alle ~19.500 Karten. Antwortzeit typ. < 10 ms. Möglich sind:
   - **Name** (deutsch): `Glurak`, `Pikachu`, `Glurak ex`
@@ -193,15 +195,22 @@ Alle Endpunkte liegen unter `public/api.php?action=…` und liefern JSON.
 
 ## Hinweise zum Scan
 
-Echte Bilderkennung wie bei kommerziellen Apps ist aufwändig. Pokélog nutzt einen
-pragmatischen, robusten Ansatz: **OCR** (Tesseract.js, Deutsch + Englisch) liest
+Der Scanner arbeitet **live** – einfach die Karte vor die Kamera halten, es ist
+**kein Knopfdruck** nötig. Technik dahinter:
 
-1. die **Kartennummer** (`123/456`) und
-2. den **Kartennamen**,
+- **OCR** (Tesseract.js, Deutsch + Englisch) liest fortlaufend den unteren
+  Kartenstreifen und erkennt die **Sammlernummer** (`136/189`).
+- Über **Nummer + Set-Gesamtzahl** wird die Karte direkt im lokalen Index
+  identifiziert (sehr eindeutig). Bei Mehrdeutigkeit liest der Scanner zusätzlich
+  den **Namen** zur Eingrenzung.
+- Die Erkennung läuft komplett im Browser (persistenter OCR-Worker), das Matching
+  rein lokal – dadurch schnell und ohne ständige Server-Anfragen.
 
-und gleicht beides mit TCGdex ab. Die Nummer dient zur Eindeutigkeit. Für beste
-Ergebnisse die Karte formatfüllend, scharf und gut beleuchtet vor die Kamera halten.
-Falls der Scan mal nicht trifft: einfach über die **Suche** hinzufügen.
+Kamera-Details: Pokélog wählt automatisch die **Haupt-Rückkamera** (keine Tele-/
+Ultraweit-Linse) und setzt den **Zoom auf 1x** zurück. Wo unterstützt, lässt sich
+die **Taschenlampe** zuschalten. Für beste Ergebnisse die Nummer scharf in den
+unteren Rahmen halten. Klappt es mal nicht: „Foto erzwingen" liest die ganze Karte,
+oder einfach über die **Suche** hinzufügen.
 
 ---
 

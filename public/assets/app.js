@@ -114,13 +114,26 @@ function pokelog() {
 
         // -------------------------------------------------- Scan
         cameraActive: false,
-        scanning: false,
+        scanning: false,            // manueller Voll-Scan laeuft
+        scanLive: false,            // Live-Erkennung aktiv
         scanProgress: '',
         scanError: '',
+        scanHint: 'Kamera wird gestartet …',
+        scanStatus: 'idle',         // idle | scanning | found | nomatch
         ocrText: '',
         ocrSummary: '',
         scanMatches: [],
+        torchOn: false,
+        torchSupported: false,
         _stream: null,
+        _worker: null,
+        _scanRun: false,
+        _scanTimer: null,
+        _scanBusy: false,
+        _camDenied: false,
+        _lastNum: '',
+        _cooldownUntil: 0,
+        _fc: null, _nc: null, _tc: null,   // Offscreen-Canvases (frame/number/name)
 
         // ============================================================ Lifecycle
         async init() {
@@ -271,6 +284,10 @@ function pokelog() {
             if (id === 'collection') this.loadCollection();
             if (id === 'sets') this.loadSets();
             if (id === 'admin') this.loadUsers();
+            // Scan-Tab: Kamera automatisch starten (sofern nicht zuvor abgelehnt).
+            if (id === 'scan' && !this.cameraActive && !this._camDenied) {
+                this.$nextTick(() => this.startCamera());
+            }
         },
 
         // Tab-Metadaten per ID (fuer die gruppierte Navigation).
@@ -611,6 +628,7 @@ function pokelog() {
                 nameAlt: null,
                 set: r.s,
                 setId: r.sid,
+                setTotal: r.t || null,
                 abbr: r.a || null,
                 localId: r.l,
                 image: r.img ? r.img + '/low.webp' : null,
@@ -1270,60 +1288,332 @@ function pokelog() {
         },
 
         // ============================================================ Scan
+        // Startet die Kamera (Rueckkamera bevorzugt) und die Live-Erkennung.
         async startCamera() {
             this.scanError = '';
+            this.scanHint = 'Kamera wird gestartet …';
+            this.scanStatus = 'scanning';
             try {
+                // Moeglichst hohe Aufloesung der Hauptkamera anfordern.
                 this._stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 1920 } },
+                    video: {
+                        facingMode: { ideal: 'environment' },
+                        width: { ideal: 1920 }, height: { ideal: 1080 },
+                    },
                     audio: false,
                 });
                 const video = this.$refs.video;
                 video.srcObject = this._stream;
                 await video.play();
                 this.cameraActive = true;
+                this._camDenied = false;
+
+                // Beste Rueckkamera waehlen + Zoom/Fokus/Torch konfigurieren.
+                await this.tuneCamera();
+
+                // Tesseract-Worker (einmalig) und Live-Loop starten.
+                await this.ensureWorker();
+                this.startScanLoop();
             } catch (e) {
-                this.scanError = 'Kamera nicht verfügbar: ' + e.message +
+                this._camDenied = (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError'));
+                this.scanStatus = 'idle';
+                this.scanHint = '';
+                this.scanError = 'Kamera nicht verfügbar: ' + (e && e.message ? e.message : e) +
                     '. Hinweis: Kamerazugriff funktioniert nur über HTTPS oder http://localhost.';
             }
         },
 
+        // Waehlt unter mehreren Linsen die Haupt-Rueckkamera (keine Tele-/Ultraweit-/
+        // Tiefen-Linse) und setzt Zoom auf 1x sowie kontinuierlichen Autofokus.
+        async tuneCamera() {
+            try {
+                const track = this._stream && this._stream.getVideoTracks()[0];
+                if (!track) return;
+
+                // Geraeteliste (Labels erst nach erteilter Freigabe verfuegbar).
+                let devices = [];
+                try { devices = await navigator.mediaDevices.enumerateDevices(); } catch (e) { /* egal */ }
+                const cams = devices.filter((d) => d.kind === 'videoinput');
+                if (cams.length > 1) {
+                    const bad = /(ultra|wide|tele|zoom|depth|tiefe|mono|infrared|ir\b|truedepth)/i;
+                    const back = /(back|rück|ruck|rear|environment|hinten|world)/i;
+                    const backs = cams.filter((c) => back.test(c.label));
+                    const pool = backs.length ? backs : cams;
+                    // Bevorzugt eine Rueckkamera ohne "tele/ultra/zoom/…" im Namen.
+                    let pick = pool.find((c) => back.test(c.label) && !bad.test(c.label))
+                        || pool.find((c) => !bad.test(c.label))
+                        || pool[0];
+                    const current = track.getSettings ? track.getSettings().deviceId : null;
+                    if (pick && pick.deviceId && pick.deviceId !== current) {
+                        this._stream.getTracks().forEach((t) => t.stop());
+                        this._stream = await navigator.mediaDevices.getUserMedia({
+                            video: {
+                                deviceId: { exact: pick.deviceId },
+                                width: { ideal: 1920 }, height: { ideal: 1080 },
+                            },
+                            audio: false,
+                        });
+                        const video = this.$refs.video;
+                        video.srcObject = this._stream;
+                        await video.play();
+                    }
+                }
+
+                // Faehigkeiten der finalen Spur anwenden.
+                const t2 = this._stream.getVideoTracks()[0];
+                const caps = t2.getCapabilities ? t2.getCapabilities() : {};
+                const adv = [];
+                // Zoom auf Minimum (1x) zuruecksetzen -> verhindert "Tele/Zoom"-Effekt.
+                if (caps.zoom && typeof caps.zoom.min === 'number') {
+                    const s = t2.getSettings ? t2.getSettings() : {};
+                    if (!s.zoom || s.zoom > caps.zoom.min) adv.push({ zoom: caps.zoom.min });
+                }
+                // Kontinuierlicher Autofokus, falls unterstuetzt.
+                if (Array.isArray(caps.focusMode) && caps.focusMode.includes('continuous')) {
+                    adv.push({ focusMode: 'continuous' });
+                }
+                this.torchSupported = !!caps.torch;
+                if (adv.length) {
+                    try { await t2.applyConstraints({ advanced: adv }); } catch (e) { /* nicht kritisch */ }
+                }
+            } catch (e) { /* Tuning ist best effort */ }
+        },
+
+        // Taschenlampe (falls von der Kamera unterstuetzt) umschalten.
+        async toggleTorch() {
+            const track = this._stream && this._stream.getVideoTracks()[0];
+            if (!track || !this.torchSupported) return;
+            try {
+                this.torchOn = !this.torchOn;
+                await track.applyConstraints({ advanced: [{ torch: this.torchOn }] });
+            } catch (e) {
+                this.torchOn = false;
+                this.showToast('Taschenlampe nicht verfügbar.');
+            }
+        },
+
         stopCamera() {
+            this._scanRun = false;
+            if (this._scanTimer) { clearTimeout(this._scanTimer); this._scanTimer = null; }
             if (this._stream) {
                 this._stream.getTracks().forEach((t) => t.stop());
                 this._stream = null;
             }
             this.cameraActive = false;
+            this.scanLive = false;
+            this.torchOn = false;
+            this.scanStatus = 'idle';
+            this.scanHint = '';
         },
 
+        // Persistenter OCR-Worker (deutlich schneller als Tesseract.recognize pro Frame).
+        async ensureWorker() {
+            if (this._worker) return this._worker;
+            this._worker = await Tesseract.createWorker('deu+eng');
+            return this._worker;
+        },
+
+        startScanLoop() {
+            if (this._scanRun) return;
+            this._scanRun = true;
+            this.scanLive = true;
+            this._lastNum = '';
+            this.scanStatus = 'scanning';
+            this.scanHint = 'Halte die Kartennummer (z. B. 136/189) scharf in den Rahmen.';
+            this.scanLoop();
+        },
+
+        // Treffer verwerfen und Live-Erkennung fortsetzen.
+        rescan() {
+            this.scanMatches = [];
+            this.scanError = '';
+            this.ocrSummary = '';
+            this._lastNum = '';
+            this._cooldownUntil = 0;
+            this.scanStatus = 'scanning';
+            this.scanHint = 'Halte die Kartennummer (z. B. 136/189) scharf in den Rahmen.';
+            if (this.cameraActive && !this._scanRun) this.startScanLoop();
+        },
+
+        async scanLoop() {
+            if (!this._scanRun) return;
+            try { await this.scanTick(); } catch (e) { /* einzelne Frames duerfen fehlschlagen */ }
+            if (this._scanRun) this._scanTimer = setTimeout(() => this.scanLoop(), 300);
+        },
+
+        // Schneidet aus dem object-cover-Videobild den sichtbaren 63:88-Bereich
+        // und liefert ein Canvas mit dem gewuenschten vertikalen Ausschnitt.
+        _regionCanvas(target, y0, y1, scale) {
+            const video = this.$refs.video;
+            const vw = video.videoWidth, vh = video.videoHeight;
+            const aspect = 63 / 88;
+            let sw, sh, sx, sy;
+            if (vw / vh > aspect) { sh = vh; sw = Math.round(vh * aspect); sx = Math.round((vw - sw) / 2); sy = 0; }
+            else { sw = vw; sh = Math.round(vw / aspect); sx = 0; sy = Math.round((vh - sh) / 2); }
+            const cy = Math.round(sy + sh * y0);
+            const ch = Math.round(sh * (y1 - y0));
+            // Zielgroesse begrenzen -> schnelle OCR (Breite max. ~1100 px).
+            let eff = scale;
+            if (sw * eff > 1100) eff = 1100 / sw;
+            const dw = Math.max(1, Math.round(sw * eff)), dh = Math.max(1, Math.round(ch * eff));
+            target.width = dw; target.height = dh;
+            const ctx = target.getContext('2d', { willReadFrequently: true });
+            ctx.drawImage(video, sx, cy, sw, ch, 0, 0, dw, dh);
+            // Kontrast/Graustufen leicht anheben -> bessere OCR.
+            try {
+                const img = ctx.getImageData(0, 0, dw, dh);
+                const d = img.data;
+                for (let i = 0; i < d.length; i += 4) {
+                    let g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+                    g = g < 110 ? g * 0.6 : (g > 150 ? Math.min(255, g * 1.25) : g);
+                    d[i] = d[i + 1] = d[i + 2] = g;
+                }
+                ctx.putImageData(img, 0, 0);
+            } catch (e) { /* CORS o. ae. -> ohne Aufbereitung weiter */ }
+            return target;
+        },
+
+        async scanTick() {
+            if (!this.cameraActive || this._scanBusy) return;
+            // Pause, solange die Detailansicht offen ist.
+            if (this.cardView) return;
+            const video = this.$refs.video;
+            if (!video || !video.videoWidth) return;
+            if (Date.now() < this._cooldownUntil) return;
+
+            this._scanBusy = true;
+            try {
+                if (!this._nc) this._nc = document.createElement('canvas');
+                // Unteren Streifen (Sammlernummer) lesen – nur Ziffern + "/".
+                const numCanvas = this._regionCanvas(this._nc, 0.80, 1.0, 2.2);
+                await this._worker.setParameters({
+                    tessedit_char_whitelist: '0123456789/ ',
+                    tessedit_pageseg_mode: '6',
+                });
+                const { data: { text: numText } } = await this._worker.recognize(numCanvas);
+                const m = (numText || '').match(/(\d{1,3})\s*\/\s*(\d{1,3})/);
+
+                if (!m) {
+                    this._lastNum = '';
+                    if (this.scanStatus !== 'found') {
+                        this.scanStatus = 'scanning';
+                        this.scanHint = 'Halte die Kartennummer (z. B. 136/189) scharf in den Rahmen.';
+                    }
+                    return;
+                }
+
+                const num = parseInt(m[1], 10);
+                const total = parseInt(m[2], 10);
+                const key = num + '/' + total;
+                if (key === this._lastNum && this.scanMatches.length) return; // schon gezeigt
+
+                // 1) Match per Nummer + Set-Gesamtzahl (sehr eindeutig).
+                let matches = await this.matchByNumber(num, total, []);
+                // 2) Wenig/keine Treffer -> Name aus dem oberen Streifen zur Eingrenzung.
+                if (matches.length !== 1) {
+                    const nameTokens = await this.readNameTokens();
+                    if (nameTokens.length) {
+                        const refined = await this.matchByNumber(num, total, nameTokens);
+                        if (refined.length) matches = refined;
+                    }
+                }
+
+                this._lastNum = key;
+                this.ocrSummary = 'Nr. ' + num + '/' + total;
+                if (matches.length) {
+                    this.scanMatches = matches;
+                    this.fillPrices(this.scanMatches);
+                    this.scanStatus = 'found';
+                    this.scanHint = matches.length === 1
+                        ? 'Treffer: ' + matches[0].name
+                        : matches.length + ' mögliche Treffer – tippe die richtige Karte an.';
+                    if (navigator.vibrate) navigator.vibrate(40);
+                    this._cooldownUntil = Date.now() + 1200;
+                } else {
+                    this.scanStatus = 'nomatch';
+                    this.scanHint = 'Nr. ' + num + '/' + total + ' erkannt, aber keine Karte gefunden. Näher heran & ruhig halten.';
+                }
+            } finally {
+                this._scanBusy = false;
+            }
+        },
+
+        // Liest den oberen Streifen (Kartenname) und liefert Namens-Tokens.
+        async readNameTokens() {
+            try {
+                if (!this._tc) this._tc = document.createElement('canvas');
+                const nameCanvas = this._regionCanvas(this._tc, 0.02, 0.17, 2.0);
+                await this._worker.setParameters({
+                    tessedit_char_whitelist: '',
+                    tessedit_pageseg_mode: '7',
+                });
+                const { data: { text } } = await this._worker.recognize(nameCanvas);
+                return this.parseOcr(text || '').candidates;
+            } catch (e) { return []; }
+        },
+
+        // Sucht im lokalen Index nach Nummer (+ optionaler Set-Gesamtzahl) und
+        // bewertet Kandidaten zusaetzlich ueber erkannte Namens-Tokens.
+        async matchByNumber(num, total, nameTokens) {
+            const langs = this.searchLang === 'ja' ? ['ja'] : (this.searchLang === 'de' ? ['de'] : ['de', 'ja']);
+            const need = langs.filter((l) => !this.index[l]);
+            if (need.length) await Promise.all(need.map((l) => this.loadIndex(l)));
+
+            const toks = (nameTokens || []).map((t) => t.toLowerCase()).filter((t) => t.length >= 4);
+            const scored = [];
+            for (const lang of langs) {
+                const rows = this.index[lang];
+                if (!rows) continue;
+                for (const r of rows) {
+                    const ln = (r.ln != null) ? r.ln : parseInt(r.l, 10);
+                    if (ln !== num) continue;
+                    let score = 1;
+                    if (total && r.t) {
+                        if (r.t === total) score += 100;
+                        else if (Math.abs(r.t - total) <= 1) score += 55;
+                        else score -= 8;
+                    } else if (total) {
+                        score += 2; // Karte ohne bekannte Gesamtzahl nicht ausschliessen
+                    }
+                    for (const tok of toks) {
+                        if (r._n && r._n.includes(tok)) score += 12;
+                        if (r._a && r._a.includes(tok)) score += 8;
+                    }
+                    scored.push({ r, lang, score });
+                }
+            }
+            if (!scored.length) return [];
+
+            // Wenn es exakte Gesamtzahl-Treffer gibt, schwache Treffer verwerfen.
+            const hasStrong = scored.some((s) => s.score >= 100);
+            const pool = hasStrong ? scored.filter((s) => s.score >= 100) : scored;
+            pool.sort((a, b) => b.score - a.score || (a.r._n ? a.r._n.length : 99) - (b.r._n ? b.r._n.length : 99));
+            return pool.slice(0, 12).map((s) => this.idxToCard(s.r, s.lang, this.ownedMap[s.lang] || {}));
+        },
+
+        // Manueller Voll-Scan (Fallback, wenn die Nummer schlecht lesbar ist):
+        // liest den gesamten sichtbaren Kartenbereich (Name + Nummer).
         async captureAndScan() {
             if (!this.cameraActive) return;
             this.scanning = true;
             this.scanError = '';
-            this.scanProgress = '0%';
-            this.scanMatches = [];
-            this.ocrText = '';
-            this.ocrSummary = '';
+            this.scanProgress = '…';
+            this._lastNum = '';
+            this._cooldownUntil = Date.now() + 1500;
 
             try {
-                const video = this.$refs.video;
-                const canvas = this.$refs.canvas;
-                const vw = video.videoWidth || 720;
-                const vh = video.videoHeight || 1280;
-                canvas.width = vw;
-                canvas.height = vh;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(video, 0, 0, vw, vh);
-
-                const { data: { text } } = await Tesseract.recognize(canvas, 'deu+eng', {
-                    logger: (m) => {
-                        if (m.status === 'recognizing text') {
-                            this.scanProgress = Math.round(m.progress * 100) + '%';
-                        }
-                    },
-                });
+                if (!this._fc) this._fc = document.createElement('canvas');
+                const full = this._regionCanvas(this._fc, 0.0, 1.0, 1.6);
+                await this.ensureWorker();
+                await this._worker.setParameters({ tessedit_char_whitelist: '', tessedit_pageseg_mode: '3' });
+                const { data: { text } } = await this._worker.recognize(full);
 
                 this.ocrText = text || '';
                 await this.searchFromOcr(text || '');
+                if (this.scanMatches.length) {
+                    this.scanStatus = 'found';
+                    this.scanHint = this.scanMatches.length + ' Treffer.';
+                }
             } catch (e) {
                 this.scanError = 'Scan fehlgeschlagen: ' + e.message;
             } finally {

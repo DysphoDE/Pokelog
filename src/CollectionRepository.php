@@ -275,9 +275,15 @@ final class CollectionRepository
     {
         $this->ensureSetIndex();
         $lang = self::normLang($lang);
-        $stmt = $this->db->prepare(
-            'SELECT card_id, name, local_id, set_id, set_name, set_abbr, image FROM card_index WHERE lang = :lang'
-        );
+        // Set-Gesamtzahl (s.total) mitliefern -> der Scanner kann clientseitig
+        // ueber "Nummer / Gesamt" (z. B. 136/189) eindeutig matchen.
+        $stmt = $this->db->prepare(<<<'SQL'
+            SELECT ci.card_id, ci.name, ci.local_id, ci.local_num, ci.set_id,
+                   ci.set_name, ci.set_abbr, ci.image, s.total AS set_total
+            FROM card_index ci
+            LEFT JOIN sets s ON s.id = ci.set_id AND s.lang = ci.lang
+            WHERE ci.lang = :lang
+        SQL);
         $stmt->execute([':lang' => $lang]);
 
         $isJa = $lang === 'ja';
@@ -287,6 +293,8 @@ final class CollectionRepository
                 'id'  => $r['card_id'],
                 'n'   => $r['name'],
                 'l'   => $r['local_id'],
+                'ln'  => $r['local_num'] !== null ? (int) $r['local_num'] : null,
+                't'   => $r['set_total'] !== null ? (int) $r['set_total'] : null,
                 'sid' => $r['set_id'],
                 's'   => $r['set_name'],
                 'a'   => $r['set_abbr'],
