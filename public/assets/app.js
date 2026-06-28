@@ -6,13 +6,20 @@ function pokelog() {
     return {
         // -------------------------------------------------- Allgemeiner Zustand
         tabs: [
+            { id: 'home',       label: 'Start',     icon: '🏠', sym: 'home' },
             { id: 'collection', label: 'Sammlung',  icon: '🗂️', sym: 'style' },
             { id: 'scan',       label: 'Scannen',   icon: '📷', sym: 'qr_code_scanner' },
             { id: 'search',     label: 'Suchen',    icon: '🔍', sym: 'search' },
             { id: 'sets',       label: 'Sets',      icon: '🃏', sym: 'auto_awesome_motion' },
             { id: 'stats',      label: 'Statistik', icon: '📊', sym: 'monitoring' },
         ],
-        tab: 'collection',
+        // Gruppierte Navigation fuer die Sidebar (Admin wird separat ergaenzt).
+        navGroups: [
+            { label: '',          items: ['home'] },
+            { label: 'Sammlung',  items: ['collection', 'stats'] },
+            { label: 'Entdecken', items: ['search', 'sets'] },
+        ],
+        tab: 'home',
         loading: false,
         refreshing: false,
         toast: '',
@@ -259,10 +266,43 @@ function pokelog() {
             if (this.openSetData) this.openSetData = null;
             this.tab = id;
             location.hash = id;
+            if (id === 'home') this.loadStats();
             if (id === 'stats') this.loadStats();
             if (id === 'collection') this.loadCollection();
             if (id === 'sets') this.loadSets();
             if (id === 'admin') this.loadUsers();
+        },
+
+        // Tab-Metadaten per ID (fuer die gruppierte Navigation).
+        tabById(id) { return this.tabs.find((t) => t.id === id) || { id, label: id, sym: 'circle' }; },
+
+        // Tageszeit-abhaengige Begruessung fuer die Startseite.
+        greeting() {
+            const h = new Date().getHours();
+            if (h < 5) return 'Gute Nacht';
+            if (h < 11) return 'Guten Morgen';
+            if (h < 17) return 'Guten Tag';
+            if (h < 22) return 'Guten Abend';
+            return 'Gute Nacht';
+        },
+
+        // Zuletzt hinzugefuegte Sammlungs-Eintraege (Kopie, nach Datum sortiert).
+        homeRecentAdded(n = 12) {
+            return [...this.collection]
+                .filter((it) => it.addedAt)
+                .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0))
+                .slice(0, n);
+        },
+
+        // Wertvollste Karte (Highlight im Hero), falls vorhanden.
+        heroCard() {
+            const top = this.stats && this.stats.topCards;
+            return (top && top.length) ? top[0] : null;
+        },
+
+        // Anzahl verschiedener Sets in der Sammlung.
+        collectionSetCount() {
+            return (this.stats && this.stats.bySet) ? this.stats.bySet.length : 0;
         },
 
         // Setzt den Such-Filter (Alle/DE/JA) und sucht neu.

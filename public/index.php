@@ -182,18 +182,36 @@ declare(strict_types=1);
             </div>
         </div>
 
-        <!-- Nav-Items -->
-        <div class="flex-1 px-4 space-y-1">
-            <template x-for="t in tabs" :key="t.id">
-                <button @click="setTab(t.id)"
-                    class="w-full flex items-center gap-3 px-4 py-3 rounded-md transition-colors duration-200"
-                    :class="tab === t.id
+        <!-- Nav-Items (gruppiert) -->
+        <div class="flex-1 px-4 space-y-4 overflow-y-auto">
+            <template x-for="g in navGroups" :key="g.label || 'main'">
+                <div class="space-y-1">
+                    <p x-show="g.label" class="px-4 pt-1 pb-0.5 font-mono text-[10px] uppercase tracking-wider text-on-surface-variant/70" x-text="g.label"></p>
+                    <template x-for="id in g.items" :key="id">
+                        <button @click="setTab(id)"
+                            class="w-full flex items-center gap-3 px-4 py-2.5 rounded-md transition-colors duration-200"
+                            :class="tab === id
+                                ? 'text-primary font-bold border-r-4 border-primary bg-primary-fixed/40'
+                                : 'text-on-surface-variant hover:text-primary hover:bg-surface-container-low'">
+                            <span class="material-symbols-outlined" :class="tab === id ? 'fill-icon' : ''" x-text="tabById(id).sym"></span>
+                            <span class="font-mono text-label-mono" x-text="tabById(id).label"></span>
+                        </button>
+                    </template>
+                </div>
+            </template>
+
+            <!-- Verwaltung (nur Admin) -->
+            <div x-show="isAdmin()" class="space-y-1">
+                <p class="px-4 pt-1 pb-0.5 font-mono text-[10px] uppercase tracking-wider text-on-surface-variant/70">Verwaltung</p>
+                <button @click="setTab('admin')"
+                    class="w-full flex items-center gap-3 px-4 py-2.5 rounded-md transition-colors duration-200"
+                    :class="tab === 'admin'
                         ? 'text-primary font-bold border-r-4 border-primary bg-primary-fixed/40'
                         : 'text-on-surface-variant hover:text-primary hover:bg-surface-container-low'">
-                    <span class="material-symbols-outlined" :class="tab === t.id ? 'fill-icon' : ''" x-text="t.sym"></span>
-                    <span class="font-mono text-label-mono" x-text="t.label"></span>
+                    <span class="material-symbols-outlined" :class="tab === 'admin' ? 'fill-icon' : ''">admin_panel_settings</span>
+                    <span class="font-mono text-label-mono">Admin</span>
                 </button>
-            </template>
+            </div>
         </div>
 
         <!-- Scan-CTA -->
@@ -324,8 +342,8 @@ declare(strict_types=1);
     <!-- ============================ MAIN ============================ -->
     <main class="md:ml-72 md:pt-24 px-4 md:px-8 pt-5 md:pb-10 pb-28">
 
-        <!-- Seiten-Kopf -->
-        <div class="flex flex-col md:flex-row md:items-end justify-between gap-3 mb-6 md:mb-8">
+        <!-- Seiten-Kopf (auf der Startseite ersetzt das Hero diesen Kopf) -->
+        <div x-show="tab !== 'home'" class="flex flex-col md:flex-row md:items-end justify-between gap-3 mb-6 md:mb-8">
             <div class="min-w-0">
                 <h2 class="text-3xl md:text-display-lg font-extrabold text-on-background tracking-tight truncate" x-text="tabs.find(t => t.id === tab)?.label || 'Pokélog'"></h2>
                 <p class="text-body-sm md:text-body-lg text-on-surface-variant mt-1" x-text="pageSubtitle()"></p>
@@ -347,6 +365,228 @@ declare(strict_types=1);
                 <span x-text="auth.needsSetup ? 'Einrichten' : 'Anmelden'"></span>
             </button>
         </div>
+
+        <!-- ============================ START / DASHBOARD ============================ -->
+        <section x-show="tab === 'home'" class="space-y-stack-lg" x-cloak>
+            <!-- Hero -->
+            <div class="relative overflow-hidden rounded-2xl border border-outline-variant bg-gradient-to-br from-primary-fixed/40 via-surface-container-lowest to-secondary/10 zx-shadow p-6 md:p-8">
+                <div class="absolute -right-24 -top-24 w-72 h-72 bg-primary/10 rounded-full blur-3xl pointer-events-none"></div>
+                <div class="absolute -left-20 -bottom-20 w-64 h-64 bg-secondary/10 rounded-full blur-3xl pointer-events-none"></div>
+                <div class="relative grid md:grid-cols-[1fr_auto] gap-6 md:gap-8 items-center">
+                    <div class="min-w-0">
+                        <p class="font-mono text-label-mono text-primary uppercase tracking-wider mb-2 flex items-center gap-2">
+                            <span class="material-symbols-outlined text-[18px] fill-icon">catching_pokemon</span>
+                            <span x-text="auth.user ? (greeting() + ', ' + auth.user.username + '!') : 'Willkommen bei Pokélog'"></span>
+                        </p>
+                        <h2 class="text-3xl md:text-display-lg font-extrabold text-on-background tracking-tight leading-tight">
+                            <span x-show="stats.totalQuantity > 0">Deine Sammlung im Überblick</span>
+                            <span x-show="stats.totalQuantity === 0">Starte deine Sammlung</span>
+                        </h2>
+                        <p class="text-body-sm md:text-body-lg text-on-surface-variant mt-2 max-w-xl">
+                            <span x-show="stats.totalQuantity > 0">
+                                <span class="font-bold text-secondary" x-text="fmtMoney(stats.totalValue)"></span> Gesamtwert ·
+                                <span class="font-semibold text-on-surface" x-text="stats.totalQuantity"></span> Karten ·
+                                <span class="font-semibold text-on-surface" x-text="stats.uniqueCards"></span> verschiedene
+                            </span>
+                            <span x-show="stats.totalQuantity === 0">
+                                Scanne Karten mit der Kamera oder suche sie – Pokélog verwaltet Werte, Sets und Statistiken automatisch.
+                            </span>
+                        </p>
+                        <div class="flex flex-wrap gap-2 mt-5">
+                            <button @click="setTab('scan')" class="px-5 py-2.5 rounded-lg bg-primary text-on-primary text-sm font-bold uppercase tracking-wide flex items-center gap-2 hover:shadow-md hover:-translate-y-0.5 transition-all">
+                                <span class="material-symbols-outlined text-[20px]">qr_code_scanner</span> Karte scannen
+                            </button>
+                            <button @click="setTab('search')" class="px-5 py-2.5 rounded-lg bg-surface-container hover:bg-surface-variant text-on-surface text-sm font-bold flex items-center gap-2 transition-colors">
+                                <span class="material-symbols-outlined text-[20px]">search</span> Suchen
+                            </button>
+                            <button x-show="isGuest()" @click="openAuth()" class="px-5 py-2.5 rounded-lg bg-secondary text-on-secondary text-sm font-bold flex items-center gap-2 hover:shadow-md transition-all">
+                                <span class="material-symbols-outlined text-[20px]">login</span>
+                                <span x-text="auth.needsSetup ? 'Einrichten' : 'Anmelden'"></span>
+                            </button>
+                        </div>
+                        <p x-show="isGuest()" class="text-[11px] text-on-surface-variant mt-3 flex items-center gap-1.5">
+                            <span class="material-symbols-outlined text-[14px] text-tertiary">info</span>
+                            Gast-Modus: Sammlung nur lokal in diesem Browser (nicht gesichert / nicht geräteübergreifend).
+                        </p>
+                    </div>
+
+                    <!-- Highlight: wertvollste Karte -->
+                    <div class="hidden md:block shrink-0 w-44">
+                        <template x-if="heroCard()">
+                            <button @click="openCollectionItem(heroCard())" class="group block w-full text-left">
+                                <p class="font-mono text-[10px] uppercase tracking-wider text-on-surface-variant mb-2 flex items-center gap-1">
+                                    <span class="material-symbols-outlined text-[14px] text-tertiary fill-icon">trophy</span> Wertvollste Karte
+                                </p>
+                                <div class="relative aspect-[63/88] rounded-xl overflow-hidden border border-outline-variant bg-surface-container-low zx-card">
+                                    <img :src="heroCard().image || placeholder" @error="$event.target.src = placeholder" @load="$event.target.classList.add('img-in')" class="zx-img absolute inset-0 h-full w-full object-contain p-1" :alt="heroCard().name">
+                                    <div class="absolute bottom-1.5 right-1.5 px-2 py-0.5 rounded-full bg-surface/90 backdrop-blur text-secondary font-mono text-[11px] font-bold border border-outline-variant tabular-nums" x-text="fmtMoney(heroCard().unitPrice)"></div>
+                                </div>
+                                <p class="text-body-sm font-semibold text-on-surface truncate mt-2" x-text="heroCard().name"></p>
+                            </button>
+                        </template>
+                        <template x-if="!heroCard()">
+                            <div class="grid place-items-center aspect-[63/88] rounded-xl border-2 border-dashed border-outline-variant bg-surface-container/40 text-on-surface-variant">
+                                <div class="text-center px-3">
+                                    <span class="material-symbols-outlined text-[36px]">style</span>
+                                    <p class="text-[11px] mt-1">Noch keine Karten</p>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Kennzahlen (klickbar) -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-gutter">
+                <button @click="setTab('stats')" class="bg-surface-container-lowest rounded-xl border border-outline-variant zx-shadow p-4 md:p-5 text-left hover:border-secondary transition-colors group">
+                    <div class="flex items-center gap-2 mb-2 text-on-surface-variant">
+                        <span class="material-symbols-outlined fill-icon text-[18px] text-secondary">payments</span>
+                        <p class="font-mono text-label-mono uppercase truncate">Gesamtwert</p>
+                    </div>
+                    <p class="text-xl md:text-2xl font-extrabold text-secondary tabular-nums truncate" x-text="fmtMoney(stats.totalValue)"></p>
+                </button>
+                <button @click="setTab('collection')" class="bg-surface-container-lowest rounded-xl border border-outline-variant zx-shadow p-4 md:p-5 text-left hover:border-primary transition-colors group">
+                    <div class="flex items-center gap-2 mb-2 text-on-surface-variant">
+                        <span class="material-symbols-outlined fill-icon text-[18px] text-primary">style</span>
+                        <p class="font-mono text-label-mono uppercase truncate">Karten gesamt</p>
+                    </div>
+                    <p class="text-xl md:text-2xl font-extrabold tabular-nums" x-text="stats.totalQuantity"></p>
+                </button>
+                <button @click="setTab('collection')" class="bg-surface-container-lowest rounded-xl border border-outline-variant zx-shadow p-4 md:p-5 text-left hover:border-tertiary transition-colors group">
+                    <div class="flex items-center gap-2 mb-2 text-on-surface-variant">
+                        <span class="material-symbols-outlined fill-icon text-[18px] text-tertiary">auto_awesome</span>
+                        <p class="font-mono text-label-mono uppercase truncate">Verschiedene</p>
+                    </div>
+                    <p class="text-xl md:text-2xl font-extrabold tabular-nums" x-text="stats.uniqueCards"></p>
+                </button>
+                <button @click="setTab('sets')" class="bg-surface-container-lowest rounded-xl border border-outline-variant zx-shadow p-4 md:p-5 text-left hover:border-secondary transition-colors group">
+                    <div class="flex items-center gap-2 mb-2 text-on-surface-variant">
+                        <span class="material-symbols-outlined fill-icon text-[18px] text-secondary">grid_view</span>
+                        <p class="font-mono text-label-mono uppercase truncate">Sets</p>
+                    </div>
+                    <p class="text-xl md:text-2xl font-extrabold tabular-nums" x-text="collectionSetCount()"></p>
+                </button>
+            </div>
+
+            <!-- Schnellzugriff -->
+            <div class="space-y-3">
+                <h3 class="font-mono text-label-mono font-bold text-on-surface-variant uppercase tracking-wider">Schnellzugriff</h3>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-gutter">
+                    <button @click="setTab('scan')" class="zx-card bg-surface-container-lowest rounded-xl border border-outline-variant zx-shadow p-4 text-left flex flex-col gap-2 group">
+                        <span class="h-10 w-10 grid place-items-center rounded-lg bg-primary-fixed/50 text-primary"><span class="material-symbols-outlined">qr_code_scanner</span></span>
+                        <div><p class="text-body-lg font-semibold text-on-surface">Scannen</p><p class="text-[11px] text-on-surface-variant">Karte per Kamera erkennen</p></div>
+                    </button>
+                    <button @click="setTab('search')" class="zx-card bg-surface-container-lowest rounded-xl border border-outline-variant zx-shadow p-4 text-left flex flex-col gap-2 group">
+                        <span class="h-10 w-10 grid place-items-center rounded-lg bg-secondary/10 text-secondary"><span class="material-symbols-outlined">search</span></span>
+                        <div><p class="text-body-lg font-semibold text-on-surface">Suchen</p><p class="text-[11px] text-on-surface-variant">Name oder Sammlernummer</p></div>
+                    </button>
+                    <button @click="setTab('sets')" class="zx-card bg-surface-container-lowest rounded-xl border border-outline-variant zx-shadow p-4 text-left flex flex-col gap-2 group">
+                        <span class="h-10 w-10 grid place-items-center rounded-lg bg-tertiary-fixed/50 text-on-tertiary-container"><span class="material-symbols-outlined">auto_awesome_motion</span></span>
+                        <div><p class="text-body-lg font-semibold text-on-surface">Sets</p><p class="text-[11px] text-on-surface-variant">Alle Sets durchstöbern</p></div>
+                    </button>
+                    <button @click="setTab('stats')" class="zx-card bg-surface-container-lowest rounded-xl border border-outline-variant zx-shadow p-4 text-left flex flex-col gap-2 group">
+                        <span class="h-10 w-10 grid place-items-center rounded-lg bg-secondary/10 text-secondary"><span class="material-symbols-outlined">monitoring</span></span>
+                        <div><p class="text-body-lg font-semibold text-on-surface">Statistik</p><p class="text-[11px] text-on-surface-variant">Wert &amp; Verteilung</p></div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Zuletzt hinzugefügt -->
+            <div x-show="homeRecentAdded().length" class="space-y-3">
+                <div class="flex items-center justify-between">
+                    <h3 class="font-mono text-label-mono font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-2">
+                        <span class="material-symbols-outlined text-[18px]">new_releases</span> Zuletzt hinzugefügt
+                    </h3>
+                    <button @click="setTab('collection')" class="font-mono text-label-mono text-secondary hover:underline flex items-center gap-1">
+                        Alle <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+                    </button>
+                </div>
+                <div class="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+                    <template x-for="it in homeRecentAdded()" :key="'ha'+it.id">
+                        <button @click="openCollectionItem(it)" class="shrink-0 w-32 text-left zx-card bg-surface-container-lowest rounded-xl border border-outline-variant zx-shadow overflow-hidden flex flex-col group">
+                            <div class="relative aspect-[63/88] bg-surface-container-low">
+                                <img :src="it.image || placeholder" @error="$event.target.src = placeholder" @load="$event.target.classList.add('img-in')" :alt="it.name" loading="lazy" class="zx-img absolute inset-0 h-full w-full object-contain p-1 group-hover:scale-[1.03] transition-transform duration-500">
+                                <span class="absolute top-1.5 right-1.5 bg-surface/90 backdrop-blur text-on-surface font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-outline-variant tabular-nums" x-text="'×' + it.quantity"></span>
+                            </div>
+                            <div class="p-2">
+                                <p class="text-body-sm font-semibold text-on-surface truncate leading-tight" x-text="it.name"></p>
+                                <p class="font-mono text-[10px] text-secondary font-bold tabular-nums" x-text="it.unitPrice !== null ? fmtMoney(it.unitPrice) : '–'"></p>
+                            </div>
+                        </button>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Wertvollste Karten -->
+            <div x-show="stats.topCards && stats.topCards.length" class="space-y-3">
+                <div class="flex items-center justify-between">
+                    <h3 class="font-mono text-label-mono font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-2">
+                        <span class="material-symbols-outlined text-[18px] text-tertiary">trophy</span> Wertvollste Karten
+                    </h3>
+                    <button @click="setTab('stats')" class="font-mono text-label-mono text-secondary hover:underline flex items-center gap-1">
+                        Statistik <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+                    </button>
+                </div>
+                <div class="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+                    <template x-for="(c, i) in stats.topCards" :key="'tc'+c.id">
+                        <button @click="openCollectionItem(c)" class="shrink-0 w-32 text-left zx-card bg-surface-container-lowest rounded-xl border border-outline-variant zx-shadow overflow-hidden flex flex-col group">
+                            <div class="relative aspect-[63/88] bg-surface-container-low">
+                                <img :src="c.image || placeholder" @error="$event.target.src = placeholder" @load="$event.target.classList.add('img-in')" :alt="c.name" loading="lazy" class="zx-img absolute inset-0 h-full w-full object-contain p-1 group-hover:scale-[1.03] transition-transform duration-500">
+                                <span class="absolute top-1.5 left-1.5 h-6 w-6 grid place-items-center rounded-full bg-tertiary text-on-tertiary font-mono text-[11px] font-bold shadow" x-text="i + 1"></span>
+                            </div>
+                            <div class="p-2">
+                                <p class="text-body-sm font-semibold text-on-surface truncate leading-tight" x-text="c.name"></p>
+                                <p class="font-mono text-[10px] text-secondary font-bold tabular-nums" x-text="fmtMoney(c.unitPrice)"></p>
+                            </div>
+                        </button>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Zuletzt angesehen -->
+            <div x-show="recent.length" class="space-y-3">
+                <div class="flex items-center justify-between">
+                    <h3 class="font-mono text-label-mono font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-2">
+                        <span class="material-symbols-outlined text-[18px]">history</span> Zuletzt angesehen
+                    </h3>
+                    <button @click="clearRecent()" class="font-mono text-label-mono text-on-surface-variant hover:text-primary">leeren</button>
+                </div>
+                <div class="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+                    <template x-for="r in recent" :key="'hr'+r.id">
+                        <button @click="openCard(r)" class="shrink-0 w-32 text-left zx-card bg-surface-container-lowest rounded-xl border border-outline-variant zx-shadow overflow-hidden flex flex-col group">
+                            <div class="relative aspect-[63/88] bg-surface-container-low">
+                                <img :src="r.image || placeholder" @error="$event.target.src = placeholder" @load="$event.target.classList.add('img-in')" :alt="r.name" loading="lazy" class="zx-img absolute inset-0 h-full w-full object-contain p-1 group-hover:scale-[1.03] transition-transform duration-500">
+                            </div>
+                            <div class="p-2">
+                                <p class="text-body-sm font-semibold text-on-surface truncate leading-tight" x-text="r.name"></p>
+                                <p class="font-mono text-[10px] text-on-surface-variant truncate" x-text="(r.set || '—') + (r.localId ? ' · ' + r.localId : '')"></p>
+                            </div>
+                        </button>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Onboarding (leere Sammlung) -->
+            <template x-if="stats.totalQuantity === 0">
+                <div class="bg-surface-container-lowest rounded-xl border border-outline-variant zx-shadow p-6">
+                    <h3 class="text-title-md font-semibold text-on-background mb-4">So funktioniert's</h3>
+                    <div class="grid sm:grid-cols-3 gap-4">
+                        <div class="flex gap-3">
+                            <span class="h-9 w-9 shrink-0 grid place-items-center rounded-full bg-primary text-on-primary font-bold">1</span>
+                            <div><p class="font-semibold text-on-surface">Karte scannen oder suchen</p><p class="text-body-sm text-on-surface-variant">Per Kamera (Nummer wie 136/189) oder über die Suche.</p></div>
+                        </div>
+                        <div class="flex gap-3">
+                            <span class="h-9 w-9 shrink-0 grid place-items-center rounded-full bg-primary text-on-primary font-bold">2</span>
+                            <div><p class="font-semibold text-on-surface">Zur Sammlung hinzufügen</p><p class="text-body-sm text-on-surface-variant">Variante, Zustand, Sprache und Anzahl wählen.</p></div>
+                        </div>
+                        <div class="flex gap-3">
+                            <span class="h-9 w-9 shrink-0 grid place-items-center rounded-full bg-primary text-on-primary font-bold">3</span>
+                            <div><p class="font-semibold text-on-surface">Wert &amp; Fortschritt sehen</p><p class="text-body-sm text-on-surface-variant">Cardmarket-Preise, Statistik und Set-Fortschritt automatisch.</p></div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </section>
 
         <!-- ============================ SAMMLUNG ============================ -->
         <section x-show="tab === 'collection'" class="space-y-stack-lg">
@@ -974,13 +1214,13 @@ declare(strict_types=1);
     <!-- ============================ BOTTOM-NAV (Mobile) ============================ -->
     <nav class="md:hidden fixed bottom-0 left-0 w-full bg-surface/95 backdrop-blur-md border-t border-outline-variant z-50 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]" style="padding-bottom: env(safe-area-inset-bottom);">
         <div class="flex justify-around items-center h-16">
+            <button @click="setTab('home')" class="flex flex-col items-center justify-center w-full h-full transition-colors" :class="tab === 'home' ? 'text-primary' : 'text-on-surface-variant'">
+                <span class="material-symbols-outlined text-[24px]" :class="tab === 'home' ? 'fill-icon' : ''">home</span>
+                <span class="font-mono text-[10px] mt-0.5" :class="tab === 'home' ? 'font-bold' : ''">Start</span>
+            </button>
             <button @click="setTab('collection')" class="flex flex-col items-center justify-center w-full h-full transition-colors" :class="tab === 'collection' ? 'text-primary' : 'text-on-surface-variant'">
                 <span class="material-symbols-outlined text-[24px]" :class="tab === 'collection' ? 'fill-icon' : ''">style</span>
                 <span class="font-mono text-[10px] mt-0.5" :class="tab === 'collection' ? 'font-bold' : ''">Sammlung</span>
-            </button>
-            <button @click="setTab('search')" class="flex flex-col items-center justify-center w-full h-full transition-colors" :class="tab === 'search' ? 'text-primary' : 'text-on-surface-variant'">
-                <span class="material-symbols-outlined text-[24px]" :class="tab === 'search' ? 'fill-icon' : ''">search</span>
-                <span class="font-mono text-[10px] mt-0.5" :class="tab === 'search' ? 'font-bold' : ''">Suchen</span>
             </button>
             <!-- Scan-FAB -->
             <div class="relative -top-5 w-full flex justify-center">
