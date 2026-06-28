@@ -94,6 +94,8 @@ function pokelog() {
         setsLoading: false,
         setsLoadedLang: null,
         setFilter: '',
+        // Set-Ansicht: 'tcg' = klassisches Sammelkartenspiel, 'pocket' = Handyspiel.
+        setsView: 'tcg',
         openSetData: null,      // { set, cards } des geoeffneten Sets
         setCardsLoading: false,
 
@@ -138,6 +140,7 @@ function pokelog() {
         // True, solange kein Benutzer angemeldet ist (Sammlung nur lokal).
         isGuest() { return !this.auth.user; },
         isAdmin() { return !!(this.auth.user && this.auth.user.role === 'admin'); },
+        userInitial() { return (this.auth.user && this.auth.user.username || '?').trim().charAt(0).toUpperCase() || '?'; },
 
         async loadAuth() {
             try {
@@ -599,10 +602,33 @@ function pokelog() {
             }
         },
 
+        // Erkennt Sets des Handyspiels „Pokémon TCG Pocket" (eigene Serie).
+        isPocketSet(s) {
+            const ser = s.serie || '';
+            return /pocket/i.test(ser) || ser.includes('ポケット');
+        },
+
+        // Anzahl Sets einer Ansicht ('tcg'|'pocket') im aktuellen Katalog.
+        setCount(view) {
+            const wantPocket = view === 'pocket';
+            return this.sets.filter((s) => this.isPocketSet(s) === wantPocket).length;
+        },
+
+        // Wechselt zwischen klassischen Sets und Pocket-Sets.
+        setSetsView(view) {
+            if (this.setsView === view) return;
+            this.setsView = view;
+            this.openSetData = null;
+            this.groupSets();
+        },
+
         groupSets() {
             const q = this.setFilter.trim().toLowerCase();
+            const wantPocket = this.setsView === 'pocket';
             const groups = new Map();
             for (const s of this.sets) {
+                // Pocket-Sets nur in der Pocket-Ansicht, sonst ausblenden.
+                if (this.isPocketSet(s) !== wantPocket) continue;
                 const hay = `${s.name} ${s.nameEn || ''} ${s.nameRomaji || ''} ${s.abbr || ''} ${s.id}`.toLowerCase();
                 if (q && !hay.includes(q)) continue;
                 const key = s.serie || 'Sonstige';

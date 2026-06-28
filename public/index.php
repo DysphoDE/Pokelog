@@ -205,45 +205,65 @@ declare(strict_types=1);
             </button>
         </div>
 
-        <!-- Wert-Übersicht -->
-        <div class="px-6 mt-6 pt-4 border-t border-outline-variant">
-            <p class="font-mono text-label-mono text-on-surface-variant uppercase">Sammlungswert</p>
-            <p class="font-mono text-title-md font-bold text-secondary tabular-nums" x-text="fmtMoney(stats.totalValue)"></p>
-            <p class="font-mono text-label-mono text-on-surface-variant mt-1">
-                <span class="tabular-nums" x-text="stats.totalQuantity"></span> Karten ·
-                <span class="tabular-nums" x-text="stats.uniqueCards"></span> versch.
-            </p>
-        </div>
-
-        <!-- Konto-Bereich -->
-        <div class="px-4 mt-4 pt-4 border-t border-outline-variant">
-            <template x-if="auth.user">
-                <div class="space-y-2">
-                    <div class="flex items-center gap-2 px-2">
-                        <span class="material-symbols-outlined text-[20px] text-success fill-icon">account_circle</span>
-                        <div class="min-w-0">
-                            <p class="text-body-sm font-semibold text-on-surface truncate" x-text="auth.user.username"></p>
-                            <p class="font-mono text-[10px] uppercase tracking-wider text-on-surface-variant" x-text="auth.user.role === 'admin' ? 'Administrator' : 'Benutzer'"></p>
+        <!-- Profil + Sammlungsdaten -->
+        <div class="px-4 mt-6">
+            <div class="rounded-xl border border-outline-variant bg-surface-container-low p-3.5 zx-shadow">
+                <!-- Kopf: angemeldet -->
+                <template x-if="auth.user">
+                    <div class="flex items-center gap-3">
+                        <div class="h-10 w-10 rounded-full bg-gradient-to-br from-secondary to-primary grid place-items-center text-on-primary font-extrabold shadow-sm ring-1 ring-primary/30 shrink-0" x-text="userInitial()"></div>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-body-sm font-bold text-on-surface truncate leading-tight" x-text="auth.user.username"></p>
+                            <span class="inline-flex items-center gap-1 font-mono text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full mt-1"
+                                :class="isAdmin() ? 'bg-primary-fixed/60 text-primary' : 'bg-surface-container text-on-surface-variant'">
+                                <span class="material-symbols-outlined text-[12px]" x-text="isAdmin() ? 'shield_person' : 'person'"></span>
+                                <span x-text="isAdmin() ? 'Admin' : 'Benutzer'"></span>
+                            </span>
+                        </div>
+                        <button @click="doLogout()" title="Abmelden" class="h-8 w-8 grid place-items-center rounded-full text-on-surface-variant hover:bg-surface-variant hover:text-error transition-colors shrink-0">
+                            <span class="material-symbols-outlined text-[18px]">logout</span>
+                        </button>
+                    </div>
+                </template>
+                <!-- Kopf: Gast -->
+                <template x-if="!auth.user">
+                    <div class="flex items-center gap-3">
+                        <div class="h-10 w-10 rounded-full bg-surface-container grid place-items-center text-on-surface-variant shrink-0">
+                            <span class="material-symbols-outlined">person</span>
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-body-sm font-bold text-on-surface leading-tight">Gast</p>
+                            <span class="inline-flex items-center gap-1 font-mono text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full mt-1 bg-tertiary-fixed/60 text-on-tertiary-container">
+                                <span class="material-symbols-outlined text-[12px]">cloud_off</span> nur lokal
+                            </span>
                         </div>
                     </div>
-                    <button @click="doLogout()" class="w-full flex items-center gap-2 px-3 py-2 rounded-md text-on-surface-variant hover:text-error hover:bg-surface-container-low transition-colors">
-                        <span class="material-symbols-outlined text-[18px]">logout</span>
-                        <span class="font-mono text-label-mono">Abmelden</span>
-                    </button>
-                </div>
-            </template>
-            <template x-if="!auth.user">
-                <div class="space-y-2">
-                    <div class="flex items-start gap-2 px-2 text-on-surface-variant">
-                        <span class="material-symbols-outlined text-[18px] text-tertiary shrink-0">info</span>
-                        <p class="text-[11px] leading-snug">Gast-Modus – Sammlung nur lokal in diesem Browser.</p>
+                </template>
+
+                <!-- Sammlungsdaten -->
+                <div class="grid grid-cols-3 gap-1 mt-3 pt-3 border-t border-outline-variant text-center">
+                    <div class="min-w-0">
+                        <p class="font-mono text-[8px] uppercase tracking-wider text-on-surface-variant">Wert</p>
+                        <p class="font-mono text-[13px] font-bold text-secondary tabular-nums truncate" x-text="fmtMoney(stats.totalValue)"></p>
                     </div>
-                    <button @click="openAuth()" class="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary text-on-primary font-bold text-sm hover:shadow-md transition-all">
+                    <div class="min-w-0 border-x border-outline-variant">
+                        <p class="font-mono text-[8px] uppercase tracking-wider text-on-surface-variant">Karten</p>
+                        <p class="font-mono text-[13px] font-bold text-on-surface tabular-nums" x-text="stats.totalQuantity"></p>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="font-mono text-[8px] uppercase tracking-wider text-on-surface-variant">Versch.</p>
+                        <p class="font-mono text-[13px] font-bold text-on-surface tabular-nums" x-text="stats.uniqueCards"></p>
+                    </div>
+                </div>
+
+                <!-- Login-CTA (nur Gast) -->
+                <template x-if="!auth.user">
+                    <button @click="openAuth()" class="w-full mt-3 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary text-on-primary font-bold text-sm hover:shadow-md transition-all">
                         <span class="material-symbols-outlined text-[18px]">login</span>
                         <span x-text="auth.needsSetup ? 'Einrichten' : 'Anmelden'"></span>
                     </button>
-                </div>
-            </template>
+                </template>
+            </div>
         </div>
     </nav>
 
@@ -564,6 +584,24 @@ declare(strict_types=1);
         <section x-show="tab === 'sets'" class="space-y-5">
             <template x-if="!openSetData">
                 <div class="space-y-5">
+                    <!-- Umschalter: klassisches Sammelkartenspiel vs. Pokémon TCG Pocket -->
+                    <div class="flex rounded-xl bg-surface-container-low border border-outline-variant p-1 w-full sm:w-auto sm:inline-flex">
+                        <button @click="setSetsView('tcg')"
+                            class="flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                            :class="setsView === 'tcg' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'">
+                            <span class="material-symbols-outlined text-[18px]">style</span>
+                            Sammelkartenspiel
+                            <span class="font-mono text-[10px] px-1.5 py-0.5 rounded-full" :class="setsView === 'tcg' ? 'bg-on-primary/20' : 'bg-surface-container'" x-text="setCount('tcg')"></span>
+                        </button>
+                        <button @click="setSetsView('pocket')"
+                            class="flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                            :class="setsView === 'pocket' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'">
+                            <span class="material-symbols-outlined text-[18px]">smartphone</span>
+                            Pokémon Pocket
+                            <span class="font-mono text-[10px] px-1.5 py-0.5 rounded-full" :class="setsView === 'pocket' ? 'bg-on-primary/20' : 'bg-surface-container'" x-text="setCount('pocket')"></span>
+                        </button>
+                    </div>
+
                     <div class="bg-surface-container-lowest rounded-xl border border-outline-variant zx-shadow p-4 flex flex-wrap items-center gap-3">
                         <div class="relative flex-1 min-w-[180px]">
                             <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">search</span>
@@ -578,7 +616,7 @@ declare(strict_types=1);
                                 :class="setsLang === 'ja' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface'">🇯🇵 Japanisch</button>
                         </div>
                         <span class="font-mono text-label-mono text-on-surface-variant">
-                            <span x-text="sets.length"></span> Sets
+                            <span x-text="setCount(setsView)"></span> Sets
                         </span>
                         <button @click="rebuildSets()" :disabled="rebuildingSets"
                             class="font-mono text-label-mono px-3 py-2 rounded-full bg-surface-container hover:bg-surface-variant text-on-surface transition-colors flex items-center gap-1.5 disabled:opacity-50"
@@ -620,7 +658,8 @@ declare(strict_types=1);
                         </div>
                     </template>
 
-                    <p x-show="!setsLoading && setGroups.length === 0" class="text-body-sm text-on-surface-variant text-center py-10">Keine Sets gefunden.</p>
+                    <p x-show="!setsLoading && setGroups.length === 0" class="text-body-sm text-on-surface-variant text-center py-10"
+                        x-text="setsView === 'pocket' ? 'Keine Pokémon-Pocket-Sets in diesem Katalog.' : 'Keine Sets gefunden.'"></p>
                 </div>
             </template>
 
@@ -1277,6 +1316,6 @@ declare(strict_types=1);
     </div>
 </div>
 
-<script src="assets/app.js"></script>
+<script src="assets/app.js?v=<?= @filemtime(__DIR__ . '/assets/app.js') ?: time() ?>"></script>
 </body>
 </html>

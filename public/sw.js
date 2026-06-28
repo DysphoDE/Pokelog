@@ -5,7 +5,8 @@
  *    cache-first und dauerhaft gespeichert -> laden sofort, bleiben offline.
  *  - API (api.php): immer Netzwerk (dynamische Daten, nie cachen).
  */
-const SHELL_CACHE = 'pokelog-shell-v1';
+// Shell-Cache-Version bei Bedarf erhoehen, um alte HTML/JS-Caches zu verwerfen.
+const SHELL_CACHE = 'pokelog-shell-v2';
 const ASSET_CACHE = 'pokelog-assets-v1';
 const SHELL_FILES = ['./', 'index.php', 'assets/app.js', 'manifest.webmanifest', 'icon.svg'];
 
@@ -64,6 +65,20 @@ async function staleWhileRevalidate(request) {
     return hit || fetching;
 }
 
+// Network-first: immer das Netz versuchen (frische Version nach Deploy),
+// nur offline auf den Cache zurueckfallen. Fuer die HTML-Navigation.
+async function networkFirst(request) {
+    const cache = await caches.open(SHELL_CACHE);
+    try {
+        const res = await fetch(request);
+        if (res && res.ok) cache.put(request, res.clone());
+        return res;
+    } catch (e) {
+        const hit = await cache.match(request);
+        return hit || (await cache.match('index.php')) || (await cache.match('./')) || Response.error();
+    }
+}
+
 self.addEventListener('fetch', (event) => {
     const { request } = event;
     if (request.method !== 'GET') return;
@@ -78,6 +93,12 @@ self.addEventListener('fetch', (event) => {
         return;
     }
     if (url.origin === self.location.origin) {
-        event.respondWith(staleWhileRevalidate(request));
+        // HTML-Seiten immer frisch aus dem Netz holen (Updates ohne Cache-Leeren);
+        // alles andere (versioniertes app.js?v=…, Manifest, Icon) stale-while-revalidate.
+        if (request.mode === 'navigate') {
+            event.respondWith(networkFirst(request));
+        } else {
+            event.respondWith(staleWhileRevalidate(request));
+        }
     }
 });
