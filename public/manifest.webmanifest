@@ -1,7 +1,7 @@
 {
   "name": "Pokélog – Pokémon-Kartensammlung",
   "short_name": "Pokélog",
-  "description": "Tracke deine Pokémon-Kartensammlung mit Scan-Funktion und Cardmarket-Preisen.",
+  "description": "Tracke deine Pokémon-Kartensammlung mit visuellem Kamera-Scan und Cardmarket-Preisen.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

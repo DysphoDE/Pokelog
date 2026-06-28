@@ -11,7 +11,7 @@ require_once __DIR__ . '/Config.php';
 final class Database
 {
     /** Aktuelle Schema-Version (PRAGMA user_version). */
-    private const SCHEMA_VERSION = 4;
+    private const SCHEMA_VERSION = 5;
 
     private static ?PDO $pdo = null;
 
@@ -79,6 +79,13 @@ final class Database
                 FROM collection_items_old
             SQL);
             $pdo->exec('DROP TABLE collection_items_old');
+        }
+
+        // --- v4 -> v5: visueller Scanner ----------------------------------
+        // card_index bekommt eine phash-Spalte (Perceptual-Hash des Karten-
+        // bilds). Reiner Cache -> per ALTER ergaenzen, falls noch nicht da.
+        if (self::tableExists($pdo, 'card_index') && !self::columnExists($pdo, 'card_index', 'phash')) {
+            $pdo->exec('ALTER TABLE card_index ADD COLUMN phash TEXT');
         }
 
         // --- Tabellen anlegen (fuer frische Installationen) ----------------
@@ -179,6 +186,7 @@ final class Database
                 set_name   TEXT,
                 set_abbr   TEXT,
                 image      TEXT,
+                phash      TEXT,
                 PRIMARY KEY (card_id, lang)
             );
         SQL);

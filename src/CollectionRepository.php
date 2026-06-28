@@ -40,6 +40,13 @@ final class CollectionRepository
     public const VARIANTS    = ['normal', 'holo', 'reverse'];
 
     /**
+     * Kantenlaenge des Perceptual-Hash-Rasters (dHash). Ergibt N*N Bit
+     * (N=12 -> 144 Bit / 18 Byte). Muss exakt mit der Client-Logik in app.js
+     * uebereinstimmen.
+     */
+    private const HASH_N = 12;
+
+    /**
      * Karten-Suffixe, die NICHT als Set-Kuerzel interpretiert werden duerfen
      * (sonst wuerde z. B. "glurak ex" faelschlich als Set "EX"/Expedition gelten).
      */
@@ -941,6 +948,181 @@ final class CollectionRepository
                 ':img'   => $c['image'] ?? null,
             ]);
         }
+    }
+
+    // -------------------------------------------------- Visueller Scanner
+
+    /**
+     * Berechnet fehlende Perceptual-Hashes (dHash) der Kartenbilder in Chargen.
+     * Resumierbar: verarbeitet pro Aufruf nur bis zu $batch noch nicht
+     * gehashte Karten. Der Client pollt, bis "remaining" 0 ist.
+     *
+     * @return array{done:int,total:int,remaining:int,processed:int,failed:int,error?:string}
+     */
+    public function buildPerceptualHashes(int $batch = 200): array
+    {
+        @set_time_limit(0);
+        $this->ensureSetIndex();
+
+        $total = (int) $this->db->query(
+            'SELECT COUNT(*) FROM card_index WHERE image IS NOT NULL AND image <> ""'
+        )->fetchColumn();
+
+        if (!function_exists('imagecreatefromstring')) {
+            $remaining = (int) $this->db->query(
+                'SELECT COUNT(*) FROM card_index WHERE phash IS NULL AND image IS NOT NULL AND image <> ""'
+            )->fetchColumn();
+            return [
+                'done' => $total - $remaining, 'total' => $total, 'remaining' => $remaining,
+                'processed' => 0, 'failed' => 0, 'error' => 'PHP-GD ist nicht verfuegbar.',
+            ];
+        }
+
+        $stmt = $this->db->prepare(<<<'SQL'
+            SELECT card_id, lang, image FROM card_index
+            WHERE phash IS NULL AND image IS NOT NULL AND image <> ""
+            LIMIT :lim
+        SQL);
+        $stmt->bindValue(':lim', max(1, $batch), PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll();
+
+        // 1) PNG-Variante parallel laden (GD liest PNG ohne webp-Erweiterung).
+        $pngUrls = [];
+        foreach ($rows as $i => $r) {
+            $pngUrls[(string) $i] = (string) (TcgdexClient::imageUrl($r['image'], 'low', 'png') ?? '');
+        }
+        $images = TcgdexClient::fetchImages($pngUrls);
+
+        // 2) webp-Fallback fuer fehlende.
+        $missing = [];
+        foreach ($rows as $i => $r) {
+            if (!isset($images[(string) $i])) {
+                $missing[(string) $i] = (string) (TcgdexClient::imageUrl($r['image'], 'low', 'webp') ?? '');
+            }
+        }
+        if ($missing !== []) {
+            foreach (TcgdexClient::fetchImages($missing) as $k => $v) {
+                $images[$k] = $v;
+            }
+        }
+
+        $upd = $this->db->prepare(
+            'UPDATE card_index SET phash = :h WHERE card_id = :cid AND lang = :lang'
+        );
+
+        $processed = 0;
+        $failed = 0;
+        foreach ($rows as $i => $r) {
+            $bytes = $images[(string) $i] ?? null;
+            $hash = ($bytes !== null) ? $this->dhashFromBytes($bytes) : null;
+            if ($hash === null) {
+                // Sentinel "" markiert "versucht, kein verwertbares Bild" -> wird
+                // nicht erneut ausgewaehlt (garantiert Fortschritt) und nicht an
+                // den Client ausgeliefert.
+                $upd->execute([':h' => '', ':cid' => $r['card_id'], ':lang' => $r['lang']]);
+                $failed++;
+                continue;
+            }
+            $upd->execute([':h' => $hash, ':cid' => $r['card_id'], ':lang' => $r['lang']]);
+            $processed++;
+        }
+
+        $remaining = (int) $this->db->query(
+            'SELECT COUNT(*) FROM card_index WHERE phash IS NULL AND image IS NOT NULL AND image <> ""'
+        )->fetchColumn();
+
+        return [
+            'done' => $total - $remaining,
+            'total' => $total,
+            'remaining' => $remaining,
+            'processed' => $processed,
+            'failed' => $failed,
+        ];
+    }
+
+    /**
+     * Liefert die kompakte Hash-Tabelle einer Sprache fuer den Client-Scanner.
+     *
+     * @return array<int,array{id:string,h:string}>
+     */
+    public function getHashTable(string $lang = 'de'): array
+    {
+        $this->ensureSetIndex();
+        $lang = self::normLang($lang);
+        $stmt = $this->db->prepare(
+            'SELECT card_id, phash FROM card_index WHERE lang = :lang AND phash IS NOT NULL AND phash <> ""'
+        );
+        $stmt->execute([':lang' => $lang]);
+        $out = [];
+        foreach ($stmt->fetchAll() as $r) {
+            $out[] = ['id' => (string) $r['card_id'], 'h' => (string) $r['phash']];
+        }
+        return $out;
+    }
+
+    /** Kurzer Status (fuer Admin-UI), ohne etwas zu berechnen. */
+    public function hashStatus(): array
+    {
+        $total = (int) $this->db->query(
+            'SELECT COUNT(*) FROM card_index WHERE image IS NOT NULL AND image <> ""'
+        )->fetchColumn();
+        $remaining = (int) $this->db->query(
+            'SELECT COUNT(*) FROM card_index WHERE phash IS NULL AND image IS NOT NULL AND image <> ""'
+        )->fetchColumn();
+        return ['done' => $total - $remaining, 'total' => $total, 'remaining' => $remaining];
+    }
+
+    /** Dekodiert Bildbytes und berechnet den dHash (Base64) oder null. */
+    private function dhashFromBytes(string $bytes): ?string
+    {
+        $src = @imagecreatefromstring($bytes);
+        if (!$src) {
+            return null;
+        }
+        try {
+            return $this->dhashFromGd($src);
+        } finally {
+            imagedestroy($src);
+        }
+    }
+
+    /**
+     * Difference-Hash eines GD-Bildes: Graustufen, auf (N+1) x N skalieren,
+     * pro Zeile benachbarte Pixel vergleichen (links > rechts) -> N*N Bit.
+     * Bits werden MSB-first in Bytes gepackt und Base64-kodiert.
+     */
+    private function dhashFromGd($src, int $n = self::HASH_N): string
+    {
+        $w = $n + 1;
+        $h = $n;
+        $small = imagecreatetruecolor($w, $h);
+        imagecopyresampled($small, $src, 0, 0, 0, 0, $w, $h, imagesx($src), imagesy($src));
+
+        $gray = [];
+        for ($y = 0; $y < $h; $y++) {
+            for ($x = 0; $x < $w; $x++) {
+                $rgb = imagecolorat($small, $x, $y);
+                $r = ($rgb >> 16) & 0xFF;
+                $g = ($rgb >> 8) & 0xFF;
+                $b = $rgb & 0xFF;
+                $gray[$y][$x] = 0.299 * $r + 0.587 * $g + 0.114 * $b;
+            }
+        }
+        imagedestroy($small);
+
+        $bits = '';
+        for ($y = 0; $y < $h; $y++) {
+            for ($x = 0; $x < $n; $x++) {
+                $bits .= ($gray[$y][$x] > $gray[$y][$x + 1]) ? '1' : '0';
+            }
+        }
+
+        $bytes = '';
+        for ($i = 0, $len = strlen($bits); $i < $len; $i += 8) {
+            $bytes .= chr((int) bindec(str_pad(substr($bits, $i, 8), 8, '0')));
+        }
+        return base64_encode($bytes);
     }
 
     // ------------------------------------------------------- Karten-Caching

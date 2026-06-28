@@ -102,9 +102,6 @@ declare(strict_types=1);
     <!-- Alpine.js fuer Reaktivitaet (kein Build-Schritt) -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
 
-    <!-- Tesseract.js fuer OCR beim Scannen -->
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
-
     <link rel="preconnect" href="https://assets.tcgdex.net">
     <link rel="dns-prefetch" href="https://assets.tcgdex.net">
 
@@ -987,15 +984,13 @@ declare(strict_types=1);
                             <div class="scanner-corners-bottom absolute inset-4 z-30 transition-colors" :class="scanStatus === 'found' ? 'text-success' : ''"></div>
                             <!-- Such-Linie nur waehrend aktiver Erkennung -->
                             <div x-show="scanStatus !== 'found'" class="scan-line absolute left-4 right-4 h-1 bg-primary shadow-[0_0_15px_rgba(188,1,0,0.8)] z-20"></div>
-                            <!-- Nummern-Fokuszone unten -->
-                            <div class="absolute left-6 right-6 bottom-6 h-[18%] border-2 border-dashed border-white/40 rounded-lg z-20"></div>
 
                             <!-- Status-Pille oben -->
                             <div class="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold backdrop-blur-md"
                                 :class="scanStatus === 'found' ? 'bg-success/90 text-white' : (scanStatus === 'nomatch' ? 'bg-error/80 text-white' : 'bg-black/55 text-white')">
                                 <span x-show="scanStatus === 'found'" class="material-symbols-outlined text-[15px] fill-icon">check_circle</span>
                                 <span x-show="scanStatus !== 'found'" class="h-2 w-2 rounded-full bg-white animate-ping"></span>
-                                <span x-text="scanStatus === 'found' ? 'Erkannt' : (scanStatus === 'nomatch' ? 'Kein Treffer' : 'Suche…')"></span>
+                                <span x-text="scanHashLoading ? 'Lädt…' : (scanStatus === 'found' ? 'Erkannt' : (scanStatus === 'nomatch' ? 'Kein Treffer' : 'Suche…'))"></span>
                             </div>
                         </div>
                     </template>
@@ -1014,7 +1009,7 @@ declare(strict_types=1);
                 <div class="flex flex-col gap-4">
                     <div>
                         <h3 class="text-title-md font-semibold text-on-background">Live-Scan</h3>
-                        <p class="text-body-sm text-on-surface-variant mt-1">Halte die Karte einfach vor die Kamera – sie wird <span class="font-semibold text-on-surface">automatisch erkannt</span>, kein Knopfdruck nötig. Am besten die <span class="font-semibold text-on-surface">Sammlernummer</span> (z. B. 136/189) in den unteren Rahmen.</p>
+                        <p class="text-body-sm text-on-surface-variant mt-1">Halte die Karte einfach vor die Kamera – sie wird per <span class="font-semibold text-on-surface">Bilderkennung automatisch erkannt</span>, kein Knopfdruck nötig. Am besten die <span class="font-semibold text-on-surface">ganze Karte</span> formatfüllend und gerade in den Rahmen.</p>
                     </div>
                     <div class="flex flex-wrap gap-2">
                         <button x-show="!cameraActive" @click="startCamera()"
@@ -1043,7 +1038,7 @@ declare(strict_types=1);
                         <span x-text="scanError"></span>
                     </div>
                     <div x-show="ocrSummary" class="font-mono text-label-mono text-on-surface-variant bg-surface-container-low rounded-lg p-3 break-words">
-                        Gelesen: <span class="text-on-surface" x-text="ocrSummary"></span>
+                        Erkennung: <span class="text-on-surface" x-text="ocrSummary"></span>
                     </div>
                 </div>
             </div>
@@ -1183,6 +1178,14 @@ declare(strict_types=1);
                                 <span x-text="rebuildingSets ? 'Aktualisiere…' : 'Set-Verzeichnis neu aufbauen'"></span>
                             </button>
                             <p class="text-[11px] text-on-surface-variant leading-snug">Lädt alle Sets/Karten neu von TCGdex (DE + JA). Betrifft alle Benutzer.</p>
+
+                            <button @click="buildScanHashes()" :disabled="buildingHashes"
+                                class="w-full px-4 py-2.5 rounded-lg bg-surface-container hover:bg-surface-variant text-on-surface text-sm font-semibold disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                                title="Berechnet visuelle Fingerabdrücke (Perceptual-Hash) aller Kartenbilder für den Scanner – einmalig, dauert mehrere Minuten">
+                                <span class="material-symbols-outlined text-[18px]" :class="buildingHashes ? 'animate-spin' : ''">fingerprint</span>
+                                <span x-text="buildingHashes ? (hashProgress || 'Berechne…') : 'Scanner-Fingerabdrücke berechnen'"></span>
+                            </button>
+                            <p class="text-[11px] text-on-surface-variant leading-snug">Lädt einmalig alle Kartenbilder und berechnet ihren visuellen Fingerabdruck für den Kamera-Scan. Resumierbar; neue Sets nur nachrechnen.</p>
                         </div>
                     </div>
 

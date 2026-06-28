@@ -177,6 +177,15 @@ try {
             respond(['lang' => reqLang(), 'cards' => $repo->searchIndex(reqLang())]);
             break;
 
+        case 'scan.hashes':
+            if ($method !== 'GET') {
+                fail('Methode nicht erlaubt', 405);
+            }
+            // Perceptual-Hash-Tabelle fuer den visuellen Scanner (gecacht).
+            header('Cache-Control: public, max-age=3600');
+            respond(['lang' => reqLang(), 'cards' => $repo->getHashTable(reqLang())]);
+            break;
+
         case 'set':
             if ($method !== 'GET') {
                 fail('Methode nicht erlaubt', 405);
@@ -206,6 +215,25 @@ try {
                 fail('Methode nicht erlaubt', 405);
             }
             respond(['result' => $repo->rebuildSetIndex()]);
+            break;
+
+        case 'scan.hashes.build':
+            Auth::requireAdmin();
+            if ($method !== 'POST') {
+                fail('Methode nicht erlaubt', 405);
+            }
+            // Resumierbar: berechnet eine Charge fehlender Bild-Fingerabdruecke.
+            // Der Client pollt, bis result.remaining == 0 ist.
+            $batch = (int) (jsonBody()['batch'] ?? 200);
+            respond(['result' => $repo->buildPerceptualHashes($batch > 0 ? $batch : 200)]);
+            break;
+
+        case 'scan.hashes.status':
+            Auth::requireAdmin();
+            if ($method !== 'GET') {
+                fail('Methode nicht erlaubt', 405);
+            }
+            respond(['result' => $repo->hashStatus()]);
             break;
 
         case 'card':

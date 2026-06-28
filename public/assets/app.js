@@ -80,6 +80,8 @@ function pokelog() {
         searchNote: '',
         searchTotal: 0,
         rebuildingSets: false,
+        buildingHashes: false,
+        hashProgress: '',
         // Lokaler Such-Index je Sprache (einmalig geladen, dann Sofortsuche).
         index: { de: null, ja: null },
         indexLoading: false,
@@ -113,7 +115,7 @@ function pokelog() {
 
         // -------------------------------------------------- Scan
         cameraActive: false,
-        scanning: false,            // manueller Voll-Scan laeuft
+        scanning: false,            // manueller Einzel-Scan laeuft
         scanLive: false,            // Live-Erkennung aktiv
         scanProgress: '',
         scanError: '',
@@ -122,18 +124,22 @@ function pokelog() {
         ocrText: '',
         ocrSummary: '',
         scanMatches: [],
+        scanHashLoading: false,     // Fingerabdruck-Tabelle wird geladen
         torchOn: false,
         torchSupported: false,
         _stream: null,
-        _worker: null,
         _scanRun: false,
         _scanTimer: null,
         _scanBusy: false,
         _camDenied: false,
-        _lastNum: '',
+        _lastId: '',
         _cooldownUntil: 0,
-        _votes: [],                        // letzte erkannte Nummern (Frame-Voting)
-        _fc: null, _nc: null, _tc: null,   // Offscreen-Canvases (frame/number/name)
+        _hashVotes: [],                    // zuletzt erkannte Karten-IDs (Frame-Voting)
+        _hc: null,                         // Offscreen-Canvas fuer den dHash
+        _hashByLang: {},                   // geladene Fingerabdruck-Tabellen je Sprache
+        scanHashes: null,                  // aktive Tabelle {ids, data, stride, lang}
+        _idxMap: {},                       // id -> Index-Zeile je Sprache
+        _popcount: null,                   // Lookup-Tabelle fuer Bit-Zaehlung
 
         // ============================================================ Lifecycle
         async init() {
@@ -408,6 +414,8 @@ function pokelog() {
             localStorage.setItem('pokelog_searchlang', id);
             this._tok.search++;
             if (this.searchQuery && this.searchQuery.trim().length >= 1) this.runSearch();
+            // Scanner laeuft -> Fingerabdruck-Tabelle der neuen Sprache laden.
+            if (this.cameraActive) this.ensureHashes();
         },
 
         // Wechselt die Sprache der Set-Ansicht.
@@ -870,6 +878,49 @@ function pokelog() {
                 this.showToast('Aktualisierung fehlgeschlagen: ' + e.message);
             } finally {
                 this.rebuildingSets = false;
+            }
+        },
+
+        // Berechnet die visuellen Fingerabdruecke (Perceptual-Hash) aller
+        // Kartenbilder fuer den Scanner. Laeuft serverseitig in Chargen; der
+        // Client pollt, bis nichts mehr offen ist. Resumierbar.
+        async buildScanHashes() {
+            if (this.buildingHashes) return;
+            this.buildingHashes = true;
+            this.hashProgress = '';
+            this.showToast('Scanner-Fingerabdrücke werden berechnet… (kann einige Minuten dauern)');
+            try {
+                let prevRemaining = Infinity;
+                while (true) {
+                    const data = await this.api('?action=scan.hashes.build', {
+                        method: 'POST',
+                        body: JSON.stringify({ batch: 200 }),
+                    });
+                    const r = data.result || {};
+                    if (r.error) { this.showToast(r.error); break; }
+                    const total = r.total || 0;
+                    this.hashProgress = total ? (r.done + ' / ' + total) : '…';
+                    if (!r.remaining || r.remaining <= 0) {
+                        this.showToast('Scanner-Fingerabdrücke fertig: ' + (r.done || 0) + ' Karten.');
+                        // Frische Tabellen erzwingen (Cache leeren).
+                        this._hashByLang = {};
+                        this.scanHashes = null;
+                        break;
+                    }
+                    // Kein Fortschritt mehr -> abbrechen (Sicherheitsnetz).
+                    if (r.remaining >= prevRemaining) {
+                        this.showToast('Abbruch ohne Fortschritt bei ' + r.remaining + ' offenen Karten.');
+                        this._hashByLang = {};
+                        this.scanHashes = null;
+                        break;
+                    }
+                    prevRemaining = r.remaining;
+                }
+            } catch (e) {
+                this.showToast('Fingerabdruck-Berechnung fehlgeschlagen: ' + e.message);
+            } finally {
+                this.buildingHashes = false;
+                this.hashProgress = '';
             }
         },
 
@@ -1405,8 +1456,8 @@ function pokelog() {
                 // Beste Rueckkamera waehlen + Zoom/Fokus/Torch konfigurieren.
                 await this.tuneCamera();
 
-                // Tesseract-Worker (einmalig) und Live-Loop starten.
-                await this.ensureWorker();
+                // Fingerabdruck-Tabelle laden (einmalig) und Live-Loop starten.
+                await this.ensureHashes();
                 this.startScanLoop();
             } catch (e) {
                 this._camDenied = (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError'));
@@ -1500,21 +1551,149 @@ function pokelog() {
             this.scanHint = '';
         },
 
-        // Persistenter OCR-Worker (deutlich schneller als Tesseract.recognize pro Frame).
-        async ensureWorker() {
-            if (this._worker) return this._worker;
-            this._worker = await Tesseract.createWorker('deu+eng');
-            return this._worker;
+        // ---- Visuelles Matching (Perceptual-Hash / dHash) -----------------
+        // Muss exakt mit der Server-Logik in CollectionRepository::dhashFromGd
+        // uebereinstimmen: Graustufen, (N+1) x N, Zeilenvergleich, MSB-first.
+        _HASH_N: 12,
+        _HASH_STRIDE: 18,              // ceil(12*12/8)
+        _HASH_MAX_DIST: 38,            // max. Hamming-Distanz fuer einen Treffer
+        _HASH_MIN_MARGIN: 4,           // Mindestabstand zum zweitbesten Kandidaten
+
+        // Laedt die Fingerabdruck-Tabelle der aktiven Katalogsprache (gecacht).
+        async ensureHashes() {
+            const lang = this.searchLang === 'ja' ? 'ja' : 'de';
+            if (this._hashByLang[lang]) { this.scanHashes = this._hashByLang[lang]; return this.scanHashes; }
+            this.scanHashLoading = true;
+            this.scanHint = 'Karten-Fingerabdrücke werden geladen …';
+            try {
+                if (!this.index[lang]) await this.loadIndex(lang);
+                const data = await this.api('?action=scan.hashes&lang=' + lang);
+                const cards = data.cards || [];
+                const stride = this._HASH_STRIDE;
+                const ids = new Array(cards.length);
+                const flat = new Uint8Array(cards.length * stride);
+                let n = 0;
+                for (const c of cards) {
+                    const bytes = this._b64ToBytes(c.h);
+                    if (!bytes || bytes.length !== stride) continue;
+                    ids[n] = c.id;
+                    flat.set(bytes, n * stride);
+                    n++;
+                }
+                ids.length = n;
+                const tbl = { ids, data: flat.subarray(0, n * stride), stride, lang };
+                this._hashByLang[lang] = tbl;
+                this.scanHashes = tbl;
+                if (n === 0) {
+                    this.scanError = 'Noch keine Karten-Fingerabdrücke vorhanden. ' +
+                        'Ein Administrator muss sie im Adminbereich einmalig berechnen.';
+                }
+                return tbl;
+            } catch (e) {
+                this.scanError = 'Karten-Fingerabdrücke konnten nicht geladen werden: ' + e.message;
+                return null;
+            } finally {
+                this.scanHashLoading = false;
+            }
+        },
+
+        _b64ToBytes(b64) {
+            try {
+                const bin = atob(b64);
+                const out = new Uint8Array(bin.length);
+                for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+                return out;
+            } catch (e) { return null; }
+        },
+
+        // id -> Index-Zeile (fuer idxToCard), je Sprache gecacht.
+        _indexRow(lang, id) {
+            let m = this._idxMap[lang];
+            if (!m) {
+                m = {};
+                for (const r of (this.index[lang] || [])) m[r.id] = r;
+                this._idxMap[lang] = m;
+            }
+            return m[id] || null;
+        },
+
+        _ensurePopcount() {
+            if (this._popcount) return this._popcount;
+            const t = new Uint8Array(256);
+            for (let i = 0; i < 256; i++) {
+                let v = i, c = 0;
+                while (v) { c += v & 1; v >>= 1; }
+                t[i] = c;
+            }
+            this._popcount = t;
+            return t;
+        },
+
+        // Berechnet den dHash des aktuell sichtbaren 63:88-Rahmenausschnitts.
+        _frameDHash() {
+            const video = this.$refs.video;
+            const vw = video && video.videoWidth, vh = video && video.videoHeight;
+            if (!vw || !vh) return null;
+            const aspect = 63 / 88;
+            let sw, sh, sx, sy;
+            if (vw / vh > aspect) { sh = vh; sw = Math.round(vh * aspect); sx = Math.round((vw - sw) / 2); sy = 0; }
+            else { sw = vw; sh = Math.round(vw / aspect); sx = 0; sy = Math.round((vh - sh) / 2); }
+
+            const N = this._HASH_N, W = N + 1, H = N;
+            if (!this._hc) this._hc = document.createElement('canvas');
+            const c = this._hc; c.width = W; c.height = H;
+            const ctx = c.getContext('2d', { willReadFrequently: true });
+            ctx.drawImage(video, sx, sy, sw, sh, 0, 0, W, H);
+            let d;
+            try { d = ctx.getImageData(0, 0, W, H).data; } catch (e) { return null; }
+
+            const gray = new Float32Array(W * H);
+            for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+                gray[p] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+            }
+            const bytes = new Uint8Array(this._HASH_STRIDE);
+            let bit = 0;
+            for (let y = 0; y < H; y++) {
+                for (let x = 0; x < N; x++) {
+                    if (gray[y * W + x] > gray[y * W + x + 1]) bytes[bit >> 3] |= (0x80 >> (bit & 7));
+                    bit++;
+                }
+            }
+            return bytes;
+        },
+
+        // Sucht die aehnlichste Karte (kleinste Hamming-Distanz) in der Tabelle.
+        _matchHash(frame) {
+            const tbl = this.scanHashes;
+            if (!tbl || !tbl.ids.length || !frame) return null;
+            const pc = this._ensurePopcount();
+            const data = tbl.data, stride = tbl.stride, n = tbl.ids.length;
+            let best = -1, bestD = 1e9, second = 1e9;
+            for (let k = 0; k < n; k++) {
+                const off = k * stride;
+                let dist = 0;
+                for (let i = 0; i < stride; i++) dist += pc[frame[i] ^ data[off + i]];
+                if (dist < bestD) { second = bestD; bestD = dist; best = k; }
+                else if (dist < second) { second = dist; }
+            }
+            return { id: tbl.ids[best], lang: tbl.lang, dist: bestD, second };
+        },
+
+        // Wandelt eine Treffer-ID in ein anzeigbares Kartenobjekt um.
+        _cardFromMatch(id, lang) {
+            const row = this._indexRow(lang, id);
+            if (!row) return null;
+            return this.idxToCard(row, lang, this.ownedMap[lang] || {});
         },
 
         startScanLoop() {
             if (this._scanRun) return;
             this._scanRun = true;
             this.scanLive = true;
-            this._lastNum = '';
-            this._votes = [];
+            this._lastId = '';
+            this._hashVotes = [];
             this.scanStatus = 'scanning';
-            this.scanHint = 'Halte die Kartennummer (z. B. 136/189) scharf in den Rahmen.';
+            this.scanHint = 'Halte die ganze Karte ausgerichtet in den Rahmen.';
             this.scanLoop();
         },
 
@@ -1523,330 +1702,151 @@ function pokelog() {
             this.scanMatches = [];
             this.scanError = '';
             this.ocrSummary = '';
-            this._lastNum = '';
-            this._votes = [];
+            this._lastId = '';
+            this._hashVotes = [];
             this._cooldownUntil = 0;
             this.scanStatus = 'scanning';
-            this.scanHint = 'Halte die Kartennummer (z. B. 136/189) scharf in den Rahmen.';
+            this.scanHint = 'Halte die ganze Karte ausgerichtet in den Rahmen.';
             if (this.cameraActive && !this._scanRun) this.startScanLoop();
         },
 
         async scanLoop() {
             if (!this._scanRun) return;
             try { await this.scanTick(); } catch (e) { /* einzelne Frames duerfen fehlschlagen */ }
-            if (this._scanRun) this._scanTimer = setTimeout(() => this.scanLoop(), 300);
+            if (this._scanRun) this._scanTimer = setTimeout(() => this.scanLoop(), 160);
         },
 
-        // Schneidet aus dem object-cover-Videobild den sichtbaren 63:88-Bereich
-        // und liefert ein Canvas mit dem gewuenschten vertikalen Ausschnitt.
-        _regionCanvas(target, y0, y1, scale) {
-            const video = this.$refs.video;
-            const vw = video.videoWidth, vh = video.videoHeight;
-            const aspect = 63 / 88;
-            let sw, sh, sx, sy;
-            if (vw / vh > aspect) { sh = vh; sw = Math.round(vh * aspect); sx = Math.round((vw - sw) / 2); sy = 0; }
-            else { sw = vw; sh = Math.round(vw / aspect); sx = 0; sy = Math.round((vh - sh) / 2); }
-            const cy = Math.round(sy + sh * y0);
-            const ch = Math.round(sh * (y1 - y0));
-            // Zielgroesse begrenzen -> schnelle OCR (Breite max. ~1100 px).
-            let eff = scale;
-            if (sw * eff > 1100) eff = 1100 / sw;
-            const dw = Math.max(1, Math.round(sw * eff)), dh = Math.max(1, Math.round(ch * eff));
-            target.width = dw; target.height = dh;
-            const ctx = target.getContext('2d', { willReadFrequently: true });
-            ctx.drawImage(video, sx, cy, sw, ch, 0, 0, dw, dh);
-            // Kontrast/Graustufen leicht anheben -> bessere OCR.
-            try {
-                const img = ctx.getImageData(0, 0, dw, dh);
-                const d = img.data;
-                for (let i = 0; i < d.length; i += 4) {
-                    let g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-                    g = g < 110 ? g * 0.6 : (g > 150 ? Math.min(255, g * 1.25) : g);
-                    d[i] = d[i + 1] = d[i + 2] = g;
-                }
-                ctx.putImageData(img, 0, 0);
-            } catch (e) { /* CORS o. ae. -> ohne Aufbereitung weiter */ }
-            return target;
-        },
-
-        // Otsu-Schwellwert + Auto-Polaritaet -> sauberes Schwarz-auf-Weiss.
-        // Macht die Ziffern-OCR robuster als reines Graustufenbild.
-        _binarize(canvas) {
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            const w = canvas.width, h = canvas.height;
-            const total = w * h;
-            if (!total) return canvas;
-            const img = ctx.getImageData(0, 0, w, h);
-            const d = img.data;
-            const hist = new Array(256).fill(0);
-            for (let i = 0; i < d.length; i += 4) hist[d[i]]++;
-            let sum = 0;
-            for (let t = 0; t < 256; t++) sum += t * hist[t];
-            let sumB = 0, wB = 0, maxVar = -1, thr = 127;
-            for (let t = 0; t < 256; t++) {
-                wB += hist[t];
-                if (!wB) continue;
-                const wF = total - wB;
-                if (!wF) break;
-                sumB += t * hist[t];
-                const mB = sumB / wB, mF = (sum - sumB) / wF;
-                const between = wB * wF * (mB - mF) * (mB - mF);
-                if (between > maxVar) { maxVar = between; thr = t; }
-            }
-            let dark = 0;
-            for (let i = 0; i < d.length; i += 4) if (d[i] <= thr) dark++;
-            const invert = dark > total / 2;   // Hintergrund dunkel -> Text hell -> invertieren
-            for (let i = 0; i < d.length; i += 4) {
-                let v = d[i] <= thr ? 0 : 255;
-                if (invert) v = 255 - v;
-                d[i] = d[i + 1] = d[i + 2] = v;
-            }
-            ctx.putImageData(img, 0, 0);
-            return canvas;
-        },
-
-        // Liest die Sammlernummer aus dem unteren Streifen (binarisiert).
-        async _readNumber() {
-            if (!this._nc) this._nc = document.createElement('canvas');
-            this._regionCanvas(this._nc, 0.80, 1.0, 2.2);
-            this._binarize(this._nc);
-            await this._worker.setParameters({
-                tessedit_char_whitelist: '0123456789/ ',
-                tessedit_pageseg_mode: '6',
-            });
-            const { data: { text } } = await this._worker.recognize(this._nc);
-            return (text || '').match(/(\d{1,3})\s*\/\s*(\d{1,3})/);
-        },
-
+        // Live-Erkennung: dHash des Rahmenausschnitts gegen die Hash-Tabelle.
         async scanTick() {
             if (!this.cameraActive || this._scanBusy) return;
             // Pause, solange die Detailansicht offen ist.
             if (this.cardView) return;
             const video = this.$refs.video;
             if (!video || !video.videoWidth) return;
+            if (!this.scanHashes || !this.scanHashes.ids.length) return;
             if (Date.now() < this._cooldownUntil) return;
 
             this._scanBusy = true;
             try {
-                const m = await this._readNumber();
+                const frame = this._frameDHash();
+                const m = this._matchHash(frame);
 
-                // Frame-Voting: nur akzeptieren, was in den letzten Frames
-                // mehrfach gelesen wurde -> kaum Fehlerkennungen / kein Flackern.
-                const cand = m ? (parseInt(m[1], 10) + '/' + parseInt(m[2], 10)) : null;
-                this._votes.push(cand);
-                if (this._votes.length > 3) this._votes.shift();
+                // Nur ausreichend klare und eindeutige Treffer in die Wahl geben.
+                const ok = m && m.dist <= this._HASH_MAX_DIST &&
+                    (m.second - m.dist) >= this._HASH_MIN_MARGIN;
+                const cand = ok ? m.id : null;
+
+                // Frame-Voting gegen Flackern/Fehltreffer.
+                this._hashVotes.push(cand);
+                if (this._hashVotes.length > 4) this._hashVotes.shift();
                 const counts = {};
-                for (const v of this._votes) if (v) counts[v] = (counts[v] || 0) + 1;
+                for (const v of this._hashVotes) if (v) counts[v] = (counts[v] || 0) + 1;
                 let best = null, bestC = 0;
                 for (const k in counts) if (counts[k] > bestC) { best = k; bestC = counts[k]; }
 
                 if (!best || bestC < 2) {
-                    this._lastNum = '';
+                    this._lastId = '';
                     if (this.scanStatus !== 'found') {
                         this.scanStatus = 'scanning';
                         this.scanHint = cand
-                            ? 'Nummer wird geprüft … ruhig halten.'
-                            : 'Halte die Kartennummer (z. B. 136/189) scharf in den Rahmen.';
+                            ? 'Karte wird geprüft … ruhig halten.'
+                            : 'Halte die ganze Karte ausgerichtet in den Rahmen.';
                     }
                     return;
                 }
 
-                const [num, total] = best.split('/').map((n) => parseInt(n, 10));
-                const key = best;
-                if (key === this._lastNum && this.scanMatches.length) return; // schon gezeigt
+                if (best === this._lastId && this.scanMatches.length) return; // schon gezeigt
 
-                // 1) Match per Nummer + Set-Gesamtzahl (sehr eindeutig).
-                let matches = await this.matchByNumber(num, total, []);
-                // 2) Wenig/keine Treffer -> Name aus dem oberen Streifen zur Eingrenzung.
-                if (matches.length !== 1) {
-                    const nameTokens = await this.readNameTokens();
-                    if (nameTokens.length) {
-                        const refined = await this.matchByNumber(num, total, nameTokens);
-                        if (refined.length) matches = refined;
-                    }
-                }
-
-                this._lastNum = key;
-                this.ocrSummary = 'Nr. ' + num + '/' + total;
-                if (matches.length) {
-                    this.scanMatches = matches;
-                    this.fillPrices(this.scanMatches);
-                    this.scanStatus = 'found';
-                    this.scanHint = matches.length === 1
-                        ? 'Treffer: ' + matches[0].name
-                        : matches.length + ' mögliche Treffer – tippe die richtige Karte an.';
-                    if (navigator.vibrate) navigator.vibrate(40);
-                    this._cooldownUntil = Date.now() + 1200;
-                } else {
+                const candidates = this._collectCandidates(frame, m.dist)
+                    .map((h) => this._cardFromMatch(h.id, m.lang))
+                    .filter(Boolean);
+                if (!candidates.length) {
                     this.scanStatus = 'nomatch';
-                    this.scanHint = 'Nr. ' + num + '/' + total + ' erkannt, aber keine Karte gefunden. Näher heran & ruhig halten.';
+                    this.scanHint = 'Karte erkannt, aber nicht im Index gefunden. Katalogsprache prüfen.';
+                    return;
                 }
+
+                this._lastId = best;
+                this.ocrSummary = 'Übereinstimmung ' + this._matchConfidence(m.dist) + '%';
+                this.scanMatches = candidates;
+                this.fillPrices(this.scanMatches);
+                this.scanStatus = 'found';
+                this.scanHint = candidates.length === 1
+                    ? 'Treffer: ' + candidates[0].name
+                    : candidates.length + ' mögliche Treffer – tippe die richtige Karte an.';
+                if (navigator.vibrate) navigator.vibrate(40);
+                this._cooldownUntil = Date.now() + 1200;
             } finally {
                 this._scanBusy = false;
             }
         },
 
-        // Liest den oberen Streifen (Kartenname) und liefert Namens-Tokens.
-        async readNameTokens() {
-            try {
-                if (!this._tc) this._tc = document.createElement('canvas');
-                const nameCanvas = this._regionCanvas(this._tc, 0.02, 0.17, 2.0);
-                await this._worker.setParameters({
-                    tessedit_char_whitelist: '',
-                    tessedit_pageseg_mode: '7',
-                });
-                const { data: { text } } = await this._worker.recognize(nameCanvas);
-                return this.parseOcr(text || '').candidates;
-            } catch (e) { return []; }
-        },
-
-        // Sucht im lokalen Index nach Nummer (+ optionaler Set-Gesamtzahl) und
-        // bewertet Kandidaten zusaetzlich ueber erkannte Namens-Tokens.
-        async matchByNumber(num, total, nameTokens) {
-            const langs = this.searchLang === 'ja' ? ['ja'] : (this.searchLang === 'de' ? ['de'] : ['de', 'ja']);
-            const need = langs.filter((l) => !this.index[l]);
-            if (need.length) await Promise.all(need.map((l) => this.loadIndex(l)));
-
-            const toks = (nameTokens || []).map((t) => t.toLowerCase()).filter((t) => t.length >= 4);
-            const scored = [];
-            for (const lang of langs) {
-                const rows = this.index[lang];
-                if (!rows) continue;
-                for (const r of rows) {
-                    const ln = (r.ln != null) ? r.ln : parseInt(r.l, 10);
-                    if (ln !== num) continue;
-                    let score = 1;
-                    if (total && r.t) {
-                        if (r.t === total) score += 100;
-                        else if (Math.abs(r.t - total) <= 1) score += 55;
-                        else score -= 8;
-                    } else if (total) {
-                        score += 2; // Karte ohne bekannte Gesamtzahl nicht ausschliessen
-                    }
-                    for (const tok of toks) {
-                        if (r._n && r._n.includes(tok)) score += 12;
-                        if (r._a && r._a.includes(tok)) score += 8;
-                    }
-                    scored.push({ r, lang, score });
-                }
+        // Sammelt alle Karten innerhalb eines kleinen Distanz-Fensters um den
+        // besten Treffer (optisch sehr aehnliche Karten = andere Rarität etc.).
+        _collectCandidates(frame, bestD) {
+            const tbl = this.scanHashes;
+            if (!tbl || !frame) return [];
+            const pc = this._ensurePopcount();
+            const data = tbl.data, stride = tbl.stride, n = tbl.ids.length;
+            const limit = bestD + 6;
+            const hits = [];
+            for (let k = 0; k < n; k++) {
+                const off = k * stride;
+                let dist = 0;
+                for (let i = 0; i < stride; i++) dist += pc[frame[i] ^ data[off + i]];
+                if (dist <= limit) hits.push({ id: tbl.ids[k], dist });
             }
-            if (!scored.length) return [];
-
-            // Wenn es exakte Gesamtzahl-Treffer gibt, schwache Treffer verwerfen.
-            const hasStrong = scored.some((s) => s.score >= 100);
-            const pool = hasStrong ? scored.filter((s) => s.score >= 100) : scored;
-            pool.sort((a, b) => b.score - a.score || (a.r._n ? a.r._n.length : 99) - (b.r._n ? b.r._n.length : 99));
-            return pool.slice(0, 12).map((s) => this.idxToCard(s.r, s.lang, this.ownedMap[s.lang] || {}));
+            hits.sort((a, b) => a.dist - b.dist);
+            return hits.slice(0, 12);
         },
 
-        // Manueller Voll-Scan (Fallback, wenn die Nummer schlecht lesbar ist):
-        // liest den gesamten sichtbaren Kartenbereich (Name + Nummer).
+        // Distanz (Bits) -> grobe Prozent-Aehnlichkeit fuer die Anzeige.
+        _matchConfidence(dist) {
+            const bits = this._HASH_STRIDE * 8;
+            return Math.max(0, Math.round((1 - dist / bits) * 100));
+        },
+
+        // Manueller Einzel-Scan ("Foto erzwingen"): matcht sofort den aktuellen
+        // Frame, auch wenn die Live-Schwelle (noch) nicht erreicht wurde, und
+        // zeigt die naechstgelegenen Kandidaten zur Auswahl.
         async captureAndScan() {
-            if (!this.cameraActive) return;
+            if (!this.cameraActive || !this.scanHashes) return;
             this.scanning = true;
             this.scanError = '';
             this.scanProgress = '…';
-            this._lastNum = '';
-            this._cooldownUntil = Date.now() + 1500;
+            this._lastId = '';
+            this._hashVotes = [];
+            this._cooldownUntil = Date.now() + 1200;
 
             try {
-                if (!this._fc) this._fc = document.createElement('canvas');
-                const full = this._regionCanvas(this._fc, 0.0, 1.0, 1.6);
-                await this.ensureWorker();
-                await this._worker.setParameters({ tessedit_char_whitelist: '', tessedit_pageseg_mode: '3' });
-                const { data: { text } } = await this._worker.recognize(full);
-
-                this.ocrText = text || '';
-                await this.searchFromOcr(text || '');
-                if (this.scanMatches.length) {
-                    this.scanStatus = 'found';
-                    this.scanHint = this.scanMatches.length + ' Treffer.';
+                const frame = this._frameDHash();
+                const m = this._matchHash(frame);
+                if (!m || m.dist > this._HASH_MAX_DIST + 14) {
+                    this.scanStatus = 'nomatch';
+                    this.scanError = 'Keine passende Karte erkannt. Karte gerade ausrichten, näher heran und Glanz vermeiden.';
+                    return;
                 }
+                const candidates = this._collectCandidates(frame, m.dist)
+                    .map((h) => this._cardFromMatch(h.id, m.lang))
+                    .filter(Boolean);
+                if (!candidates.length) {
+                    this.scanStatus = 'nomatch';
+                    this.scanError = 'Karte erkannt, aber nicht im Index gefunden. Katalogsprache prüfen.';
+                    return;
+                }
+                this._lastId = m.id;
+                this.ocrSummary = 'Übereinstimmung ' + this._matchConfidence(m.dist) + '%';
+                this.scanMatches = candidates;
+                this.fillPrices(this.scanMatches);
+                this.scanStatus = 'found';
+                this.scanHint = candidates.length === 1
+                    ? 'Treffer: ' + candidates[0].name
+                    : candidates.length + ' mögliche Treffer – tippe die richtige Karte an.';
             } catch (e) {
                 this.scanError = 'Scan fehlgeschlagen: ' + e.message;
             } finally {
                 this.scanning = false;
                 this.scanProgress = '';
-            }
-        },
-
-        // Extrahiert Nummer (z. B. 136/189) und Namenskandidaten aus dem OCR-Text.
-        parseOcr(text) {
-            const numMatch = text.match(/(\d{1,3})\s*\/\s*(\d{1,3})/);
-            const number = numMatch
-                ? { localId: String(parseInt(numMatch[1], 10)), total: parseInt(numMatch[2], 10), raw: numMatch[1] }
-                : null;
-
-            const stop = new Set([
-                'POKEMON', 'POKÉMON', 'ENERGY', 'ENERGIE', 'TRAINER', 'BASIS', 'STUFE',
-                'STAGE', 'ITEM', 'SUPPORTER', 'STADIUM', 'ILLUS', 'WEAKNESS', 'RESISTANCE',
-                'RETREAT', 'SCHWÄCHE', 'RESISTENZ', 'RÜCKZUG', 'ATTACKE', 'ABILITY', 'FÄHIGKEIT',
-            ]);
-            const tokens = (text.match(/[A-Za-zÄÖÜäöüß'’\-]{3,}/g) || [])
-                .map((w) => w.replace(/['’\-]+$/, ''))
-                .filter((w) => w.length >= 3 && !stop.has(w.toUpperCase()));
-
-            // Eindeutige Kandidaten, lange zuerst (Pokémon-Namen sind meist lang).
-            const uniq = [];
-            const seen = new Set();
-            for (const w of tokens) {
-                const k = w.toLowerCase();
-                if (!seen.has(k)) { seen.add(k); uniq.push(w); }
-            }
-            uniq.sort((a, b) => b.length - a.length);
-            return { number, candidates: uniq.slice(0, 5) };
-        },
-
-        async searchFromOcr(text) {
-            const { number, candidates } = this.parseOcr(text);
-            this.ocrSummary = (candidates.slice(0, 3).join(', ') || '–') +
-                (number ? `  ·  Nr. ${number.localId}/${number.total}` : '');
-
-            if (candidates.length === 0) {
-                this.scanError = 'Kein Kartenname erkannt. Bitte näher heran und scharf stellen.';
-                return;
-            }
-
-            // Bis zu 3 Kandidaten durchsuchen und Treffer sammeln.
-            const collected = new Map();
-            for (const cand of candidates.slice(0, 3)) {
-                try {
-                    const data = await this.api('?action=search&lang=de&q=' + encodeURIComponent(cand));
-                    for (const r of (data.results || [])) {
-                        if (!collected.has(r.id)) collected.set(r.id, r);
-                    }
-                } catch (e) { /* naechsten Kandidaten versuchen */ }
-                if (collected.size > 0 && number) break; // mit Nummer reicht ein Treffersatz
-            }
-
-            let results = [...collected.values()];
-
-            // Mit erkannter Kartennummer priorisieren / filtern.
-            if (number && results.length) {
-                const exact = results.filter((r) =>
-                    String(r.localId) === number.localId &&
-                    (!r.setTotal || Math.abs(r.setTotal - number.total) <= 2)
-                );
-                const byLocal = results.filter((r) => String(r.localId) === number.localId);
-                if (exact.length) results = exact;
-                else if (byLocal.length) results = byLocal;
-                else {
-                    results.sort((a, b) =>
-                        (String(b.localId) === number.localId) - (String(a.localId) === number.localId));
-                }
-            }
-
-            this.scanMatches = results.slice(0, 12);
-            // Im Gast-Modus die Besitz-Markierung aus dem lokalen Speicher setzen.
-            if (this.isGuest()) {
-                for (const r of this.scanMatches) {
-                    const m = this.ownedMap[r.lang || 'de'] || {};
-                    r.owned = m[r.id] || 0;
-                }
-            }
-            this.fillPrices(this.scanMatches);
-            if (this.scanMatches.length === 0) {
-                this.scanError = 'Keine passende Karte gefunden. Versuch es über die Suche.';
             }
         },
 

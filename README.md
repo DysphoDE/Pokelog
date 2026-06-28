@@ -5,16 +5,19 @@ inspiriert von *Manabox*. Inklusive **Kamera-Scan-Funktion**, **deutschen
 Cardmarket-Preisen** für deutsche Karten und **Unterstützung für japanische Karten**.
 
 Gebaut mit **PHP (ohne Build-Schritt)**, **SQLite**, **Tailwind CSS (CDN)**,
-**Alpine.js** und **Tesseract.js** für OCR.
+**Alpine.js** und **visueller Bilderkennung** (Perceptual-Hash) für den Scan.
 
 ---
 
 ## Features
 
-- 📷 **Live-Scan per Kamera** – Karte einfach vor die Kamera halten (kein
-  Knopfdruck): OCR liest die Sammlernummer (z. B. `136/189`) und matcht sie
-  über Nummer + Set-Gesamtzahl sofort im lokalen Index. Wählt automatisch die
-  Haupt-Rückkamera (Zoom 1x), optional mit Taschenlampe.
+- 📷 **Live-Scan per Kamera (visuelle Bilderkennung)** – Karte einfach vor die
+  Kamera halten (kein Knopfdruck): Der Scanner berechnet live einen visuellen
+  Fingerabdruck (Perceptual-Hash / dHash) des Kamerabilds und findet die
+  ähnlichste Karte in einer vorberechneten Hash-Tabelle. Das ist sprach- und
+  schriftunabhängig und robust gegen Holo-Glanz – deutlich zuverlässiger als
+  reines Ziffern-OCR. Wählt automatisch die Haupt-Rückkamera (Zoom 1x),
+  optional mit Taschenlampe.
 - 🔍 **Blitzschnelle Suche (lokal, keine Live-API-Calls)** – dank lokalem
   Karten-Index über alle ~19.500 Karten. Antwortzeit typ. < 10 ms. Möglich sind:
   - **Name** (deutsch): `Glurak`, `Pikachu`, `Glurak ex`
@@ -95,8 +98,9 @@ beim Index-Aufbau alle ~25.000 Karten einzeln abzufragen.
 
 ## Voraussetzungen
 
-- **PHP ≥ 8.1** mit den Erweiterungen `pdo_sqlite`, `sqlite3`, `curl`
-  (alles in Standard-PHP enthalten).
+- **PHP ≥ 8.1** mit den Erweiterungen `pdo_sqlite`, `sqlite3`, `curl` und `gd`
+  (alles in Standard-PHP enthalten). `gd` wird für die Berechnung der visuellen
+  Karten-Fingerabdrücke (Scanner) benötigt.
 - Internetverbindung (für TCGdex-Abfragen und die CDN-Skripte).
 
 Prüfen:
@@ -175,6 +179,9 @@ Alle Endpunkte liegen unter `public/api.php?action=…` und liefern JSON.
 | `GET`  | `sets&lang=de` | Alle Sets der Sprache (nach Serie gruppierbar, mit Logo/Release/Kartenzahl) |
 | `GET`  | `set&id=sv03.5&lang=de` | Alle Karten eines Sets (für den Set-Browser) |
 | `POST` | `sets.rebuild` | Set-Verzeichnis **DE + JA** neu aufbauen (bei neuen Sets, ~1–2 Min.) |
+| `GET`  | `scan.hashes&lang=de` | Visuelle Fingerabdruck-Tabelle (Perceptual-Hash) für den Scanner |
+| `POST` | `scan.hashes.build` | **(Admin)** Fehlende Bild-Fingerabdrücke berechnen (resumierbar, Charge à 200) |
+| `GET`  | `scan.hashes.status` | **(Admin)** Fortschritt der Fingerabdruck-Berechnung (`done`/`total`/`remaining`) |
 | `GET`  | `card&id=swsh3-136&lang=de` | Einzelne Karte (gecached) |
 | `GET`  | `prices&ids=a,b,c&lang=de` | Cardmarket-Preise für beliebige Karten (holt fehlende nach & cacht sie) |
 | `GET`  | `collection` | Sammlung abrufen (Filter: `&set=`, `&q=`) |
@@ -195,22 +202,33 @@ Alle Endpunkte liegen unter `public/api.php?action=…` und liefern JSON.
 
 ## Hinweise zum Scan
 
-Der Scanner arbeitet **live** – einfach die Karte vor die Kamera halten, es ist
-**kein Knopfdruck** nötig. Technik dahinter:
+Der Scanner arbeitet **live** und per **visueller Bilderkennung** – einfach die
+Karte vor die Kamera halten, es ist **kein Knopfdruck** nötig. Technik dahinter:
 
-- **OCR** (Tesseract.js, Deutsch + Englisch) liest fortlaufend den unteren
-  Kartenstreifen und erkennt die **Sammlernummer** (`136/189`).
-- Über **Nummer + Set-Gesamtzahl** wird die Karte direkt im lokalen Index
-  identifiziert (sehr eindeutig). Bei Mehrdeutigkeit liest der Scanner zusätzlich
-  den **Namen** zur Eingrenzung.
-- Die Erkennung läuft komplett im Browser (persistenter OCR-Worker), das Matching
-  rein lokal – dadurch schnell und ohne ständige Server-Anfragen.
+- **Perceptual-Hash (dHash):** Jede Karte bekommt **einmalig serverseitig** einen
+  kompakten visuellen Fingerabdruck (Graustufen → 13×12-Raster → 144-Bit-Hash),
+  berechnet aus dem TCGdex-Kartenbild. Diese Hash-Tabelle wird im `card_index`
+  gespeichert.
+- **Live im Browser:** Der ausgerichtete Kartenausschnitt (63:88-Rahmen) wird mit
+  exakt demselben Verfahren gehasht und per **Hamming-Distanz** gegen die
+  geladene Tabelle gematcht. Frame-Voting + Distanz-Schwelle + Abstand zum
+  zweitbesten Treffer verhindern Fehlerkennungen.
+- **Vorteile:** sprach- und schriftunabhängig (DE/JA), robust gegen Holo-Glanz,
+  ohne OCR-Latenz – das Matching läuft rein lokal in Millisekunden. Optisch sehr
+  ähnliche Karten (z. B. andere Rarität) werden als kurze Trefferliste angeboten.
+
+**Einmaliger Aufbau:** Die Fingerabdrücke müssen einmal berechnet werden – als
+**Admin** im Tab **„Admin" → „Scanner-Fingerabdrücke berechnen"** (oder
+`POST api.php?action=scan.hashes.build`, resumierbar). Es werden dabei alle
+Kartenbilder einmal geladen; das dauert je nach Verbindung einige Minuten und
+ist danach dauerhaft gespeichert (neue Sets nur nachrechnen).
 
 Kamera-Details: Pokélog wählt automatisch die **Haupt-Rückkamera** (keine Tele-/
 Ultraweit-Linse) und setzt den **Zoom auf 1x** zurück. Wo unterstützt, lässt sich
-die **Taschenlampe** zuschalten. Für beste Ergebnisse die Nummer scharf in den
-unteren Rahmen halten. Klappt es mal nicht: „Foto erzwingen" liest die ganze Karte,
-oder einfach über die **Suche** hinzufügen.
+die **Taschenlampe** zuschalten. Für beste Ergebnisse die **ganze Karte**
+formatfüllend und gerade in den Rahmen halten. Klappt es mal nicht: „Foto
+erzwingen" matcht den aktuellen Frame sofort, oder einfach über die **Suche**
+hinzufügen.
 
 ---
 

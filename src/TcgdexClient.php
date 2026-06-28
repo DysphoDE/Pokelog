@@ -126,6 +126,63 @@ final class TcgdexClient
     }
 
     /**
+     * Laedt mehrere Bilder gleichzeitig (parallele HTTP-Requests via curl_multi)
+     * und gibt die rohen Binaerdaten zurueck. Wird fuer den Aufbau der
+     * Perceptual-Hashes (Scanner) genutzt.
+     *
+     * @param array<string,string> $urls Map key => Bild-URL
+     * @return array<string,string> Map key => Bildbytes (nur erfolgreiche)
+     */
+    public static function fetchImages(array $urls): array
+    {
+        if ($urls === []) {
+            return [];
+        }
+
+        $mh = curl_multi_init();
+        $handles = [];
+        foreach ($urls as $key => $url) {
+            if ($url === '') {
+                continue;
+            }
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_CONNECTTIMEOUT => 8,
+                CURLOPT_TIMEOUT        => 20,
+                CURLOPT_ENCODING       => '',
+                CURLOPT_HTTPHEADER     => [
+                    'Accept: image/png,image/webp,image/*',
+                    'User-Agent: Pokelog/1.0 (+self-hosted collection tracker)',
+                ],
+            ]);
+            curl_multi_add_handle($mh, $ch);
+            $handles[(string) $key] = $ch;
+        }
+
+        do {
+            $status = curl_multi_exec($mh, $running);
+            if ($running) {
+                curl_multi_select($mh, 1.0);
+            }
+        } while ($running && $status === CURLM_OK);
+
+        $out = [];
+        foreach ($handles as $key => $ch) {
+            $body = curl_multi_getcontent($ch);
+            $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_multi_remove_handle($mh, $ch);
+            curl_close($ch);
+            if ($code >= 200 && $code < 300 && is_string($body) && $body !== '') {
+                $out[(string) $key] = $body;
+            }
+        }
+        curl_multi_close($mh);
+        return $out;
+    }
+
+    /**
      * Liste aller Sets (knapp: id, name, cardCount).
      *
      * @return array<int,array<string,mixed>>
