@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Zenith Dex - Collection Browser</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary-fixed-variant": "#524600",
+                        "tertiary-fixed": "#ffe24a",
+                        "surface": "#f9f9fc",
+                        "on-background": "#1a1c1e",
+                        "surface-container-high": "#e8e8ea",
+                        "on-tertiary-container": "#4a3f00",
+                        "secondary-container": "#080cff",
+                        "on-surface-variant": "#603e39",
+                        "on-secondary-container": "#b6baff",
+                        "primary": "#bc0100",
+                        "on-tertiary": "#ffffff",
+                        "outline": "#956d67",
+                        "secondary": "#0001c0",
+                        "on-error-container": "#93000a",
+                        "inverse-on-surface": "#f0f0f3",
+                        "outline-variant": "#ebbbb4",
+                        "surface-container": "#eeeef0",
+                        "on-error": "#ffffff",
+                        "on-primary-fixed-variant": "#930100",
+                        "surface-container-low": "#f3f3f6",
+                        "on-secondary": "#ffffff",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-variant": "#e2e2e5",
+                        "on-primary-container": "#fffbff",
+                        "on-primary-fixed": "#410000",
+                        "on-secondary-fixed": "#00006e",
+                        "tertiary-container": "#c4ab00",
+                        "on-tertiary-fixed": "#211b00",
+                        "on-surface": "#1a1c1e",
+                        "secondary-fixed-dim": "#bec2ff",
+                        "on-primary": "#ffffff",
+                        "on-secondary-fixed-variant": "#0000ef",
+                        "surface-dim": "#dadadc",
+                        "surface-bright": "#f9f9fc",
+                        "inverse-surface": "#2f3133",
+                        "error-container": "#ffdad6",
+                        "error": "#ba1a1a",
+                        "primary-fixed": "#ffdad4",
+                        "surface-container-highest": "#e2e2e5",
+                        "tertiary": "#6d5e00",
+                        "primary-container": "#eb0000",
+                        "background": "#f9f9fc",
+                        "inverse-primary": "#ffb4a8",
+                        "secondary-fixed": "#e0e0ff",
+                        "tertiary-fixed-dim": "#e3c600",
+                        "primary-fixed-dim": "#ffb4a8",
+                        "surface-tint": "#c00100"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-md": "12px",
+                        "stack-lg": "32px",
+                        "container-padding": "24px",
+                        "base": "8px",
+                        "gutter": "16px",
+                        "stack-sm": "4px"
+                    },
+                    "fontFamily": {
+                        "body-lg": ["Plus Jakarta Sans"],
+                        "body-sm": ["Plus Jakarta Sans"],
+                        "headline-lg": ["Plus Jakarta Sans"],
+                        "title-md": ["Plus Jakarta Sans"],
+                        "headline-lg-mobile": ["Plus Jakarta Sans"],
+                        "display-lg": ["Plus Jakarta Sans"],
+                        "label-mono": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+                        "title-md": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "headline-lg-mobile": ["24px", { "lineHeight": "32px", "fontWeight": "700" }],
+                        "display-lg": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "800" }],
+                        "label-mono": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .card-image-container { aspect-ratio: 2.5/3.5; }
+        .glass-panel { background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.3); }
+        .type-fire { background-color: rgba(235, 0, 0, 0.1); color: #eb0000; }
+        .type-water { background-color: rgba(0, 1, 192, 0.1); color: #0001c0; }
+        .type-grass { background-color: rgba(109, 94, 0, 0.1); color: #6d5e00; }
+        .type-electric { background-color: rgba(255, 226, 74, 0.2); color: #4a3f00; }
+        
+        .nav-item-active { flex items-center gap-3 px-4 py-3 text-primary dark:text-primary-fixed font-bold border-r-4 border-primary dark:border-primary-fixed bg-primary-fixed/10 }
+        .nav-item-inactive { flex items-center gap-3 px-4 py-3 text-on-surface-variant dark:text-surface-variant hover:text-primary dark:hover:text-primary-fixed }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-lg antialiased">
+<!-- SideNav Web -->
+<aside class="hidden md:flex flex-col h-screen w-72 fixed left-0 top-0 bg-surface dark:bg-on-background border-r border-outline-variant shadow-sm z-50">
+<div class="flex flex-col h-full py-8">
+<div class="px-6 mb-8 flex items-center gap-4">
+<div class="w-12 h-12 rounded-full overflow-hidden border-2 border-primary">
+<img alt="Collector Profile Avatar" class="w-full h-full object-cover" data-alt="A stylized, modern, flat-design 2D vector avatar portrait of an elite Pokemon card collector. The character has a confident smirk, wearing a sleek jacket. The style is clean, vibrant, and minimal, similar to contemporary tech illustrations. High-contrast colors, deep blues and crisp whites." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDXWWv8NovnpvA0p3w4APWpv1EYAdtIcZ6M9CMeH8-wcEibmwvZjgkHgRjrin1807W_Mkv4ymlS1uc18djDSSretRCihu0AyT6GDjiJsuVWv46kkmvJG6t55yIfee-CEELQ0GboUOMPABlZ1KGG8RcQL66zIVINZpO4aAHOC2gJh-qiTPp9GTVFh4OJ5BGewzO0wyOlfAdFNLd3QMFYzvp88TLIyxWD35yglHDbR-ysWEKmB7GFX0ddNVCuBnUwmcs9yeUyhE0iEWq_"/>
+</div>
+<div>
+<h1 class="font-display-lg text-title-md font-extrabold text-primary dark:text-primary-fixed leading-tight">Zenith Dex</h1>
+<p class="font-label-mono text-label-mono text-on-surface-variant">Elite Collector</p>
+</div>
+</div>
+<nav class="flex-1 flex flex-col gap-1">
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant dark:text-surface-variant hover:text-primary dark:hover:text-primary-fixed hover:bg-surface-container-low dark:hover:bg-surface-container-highest transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">dashboard</span>
+<span class="font-title-md text-body-lg font-semibold">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-primary dark:text-primary-fixed font-bold border-r-4 border-primary dark:border-primary-fixed bg-primary-fixed/10 hover:bg-surface-container-low dark:hover:bg-surface-container-highest transition-colors duration-200 scale-95 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">style</span>
+<span class="font-title-md text-body-lg font-semibold">Collection</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant dark:text-surface-variant hover:text-primary dark:hover:text-primary-fixed hover:bg-surface-container-low dark:hover:bg-surface-container-highest transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">show_chart</span>
+<span class="font-title-md text-body-lg font-semibold">Market Trends</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant dark:text-surface-variant hover:text-primary dark:hover:text-primary-fixed hover:bg-surface-container-low dark:hover:bg-surface-container-highest transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">auto_awesome_motion</span>
+<span class="font-title-md text-body-lg font-semibold">Sets</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant dark:text-surface-variant hover:text-primary dark:hover:text-primary-fixed hover:bg-surface-container-low dark:hover:bg-surface-container-highest transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">settings</span>
+<span class="font-title-md text-body-lg font-semibold">Settings</span>
+</a>
+</nav>
+<div class="px-6 mt-auto mb-6">
+<button class="w-full bg-primary text-on-primary font-title-md text-body-lg font-bold uppercase py-3 rounded hover:scale-105 active:scale-95 transition-transform flex items-center justify-center gap-2 shadow-sm active:shadow-none border border-transparent active:border-primary-container">
+<span class="material-symbols-outlined">qr_code_scanner</span>
+                     Scan New Card
+                </button>
+</div>
+<div class="flex flex-col gap-1 border-t border-outline-variant pt-4">
+<a class="flex items-center gap-3 px-4 py-2 text-on-surface-variant hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">help</span>
+<span class="font-body-sm text-body-sm">Support</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-on-surface-variant hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">logout</span>
+<span class="font-body-sm text-body-sm">Logout</span>
+</a>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="md:ml-72 min-h-screen pb-20 md:pb-0 flex flex-col relative">
+<!-- TopAppBar Web -->
+<header class="hidden md:flex fixed top-0 right-0 w-[calc(100%-18rem)] z-40 bg-surface/80 dark:bg-on-background/80 backdrop-blur-md justify-between items-center h-16 px-8">
+<div class="flex-1 flex items-center gap-4">
+<div class="relative w-full max-w-md group">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant group-focus-within:text-primary transition-colors">search</span>
+<input class="w-full bg-surface-container-low border-b-2 border-transparent focus:border-primary focus:ring-0 pl-10 pr-4 py-2 rounded-t font-body-sm text-body-sm text-on-surface placeholder:text-on-surface-variant transition-all outline-none" placeholder="Search collection, sets, or Pokémon..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:text-primary transition-colors hover:scale-110 duration-200">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors hover:scale-110 duration-200">
+<span class="material-symbols-outlined">account_balance_wallet</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-surface-container-high ml-2 border border-outline-variant overflow-hidden">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="A stylized minimalist avatar icon of a high-tech collector profile in an interface. Clean light background, sleek blue and red accents. Professional tech illustration style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDWEEtBUshg_wGZKE-HH5JneIGIFUuKe6fQ-o6A0ykOCeAvqD2RrFp4toobue7B-SsiuTLNBtFbyA-MQ8NYB2LbZ9f5tagGBxACl39PxLTKWwPbXtFj3onz08BCfEg5pAnbhRTLS7iyD-NRgzooDmOZU-t7Y5SwaCMdeZ_Keg_D0d3xvpEg80iglJbervj7VpnxMa_1pmvqqadl8V28mWNih-856ZLVbAtz_hlSOcg5UT-JARc2KUmrDwfm1vzXIvrrJUHwU3y1Xx0g"/>
+</div>
+</div>
+</header>
+<!-- Mobile Top Nav -->
+<header class="md:hidden flex items-center justify-between px-4 py-4 bg-surface/90 backdrop-blur-md sticky top-0 z-40">
+<h1 class="font-headline-lg-mobile text-headline-lg-mobile font-bold text-primary">Zenith Dex</h1>
+<button class="text-on-surface-variant">
+<span class="material-symbols-outlined">search</span>
+</button>
+</header>
+<div class="flex-1 p-4 md:p-8 md:mt-16">
+<!-- Header Section -->
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+<div>
+<h2 class="font-headline-lg text-headline-lg md:text-[40px] md:leading-[48px] text-on-surface font-extrabold mb-2">My Collection</h2>
+<p class="font-body-lg text-body-lg text-on-surface-variant">Showing 1,204 graded artifacts in your vault.</p>
+</div>
+<div class="flex items-center gap-2">
+<span class="font-label-mono text-label-mono text-on-surface-variant uppercase tracking-wider">Total Est. Value</span>
+<span class="font-title-md text-title-md text-secondary font-bold">$42,850.00</span>
+<span class="flex items-center text-[#198754] bg-[#198754]/10 px-2 py-0.5 rounded-full font-label-mono text-label-mono ml-2">
+<span class="material-symbols-outlined text-[14px] mr-1">arrow_upward</span> 4.2%
+                    </span>
+</div>
+</div>
+<!-- Filters & Sorting Bento Area -->
+<div class="glass-panel rounded-xl p-4 mb-8 flex flex-col md:flex-row gap-4 justify-between items-center shadow-sm">
+<div class="flex flex-wrap gap-2 items-center w-full md:w-auto">
+<span class="font-label-mono text-label-mono text-on-surface-variant mr-2 hidden md:inline-block">FILTERS:</span>
+<button class="px-3 py-1.5 rounded-full border border-outline-variant hover:border-primary text-on-surface font-body-sm text-body-sm flex items-center gap-1 transition-colors bg-surface">
+<span class="material-symbols-outlined text-[16px]">filter_list</span> Type
+                    </button>
+<button class="px-3 py-1.5 rounded-full border border-outline-variant hover:border-primary text-on-surface font-body-sm text-body-sm flex items-center gap-1 transition-colors bg-surface">
+<span class="material-symbols-outlined text-[16px]">category</span> Set
+                    </button>
+<button class="px-3 py-1.5 rounded-full border border-outline-variant hover:border-primary text-on-surface font-body-sm text-body-sm flex items-center gap-1 transition-colors bg-surface">
+<span class="material-symbols-outlined text-[16px]">stars</span> Rarity
+                    </button>
+<div class="h-6 w-px bg-outline-variant mx-2 hidden md:block"></div>
+<!-- Active Filter Chips -->
+<span class="type-fire px-2 py-1 rounded-full font-label-mono text-[10px] flex items-center gap-1 cursor-pointer hover:opacity-80">
+                        FIRE <span class="material-symbols-outlined text-[12px]">close</span>
+</span>
+<span class="bg-surface-container-high text-on-surface px-2 py-1 rounded-full font-label-mono text-[10px] flex items-center gap-1 cursor-pointer hover:bg-surface-variant">
+                        PSA 9+ <span class="material-symbols-outlined text-[12px]">close</span>
+</span>
+</div>
+<div class="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 border-outline-variant pt-3 md:pt-0 mt-3 md:mt-0">
+<div class="flex items-center gap-2">
+<span class="font-label-mono text-label-mono text-on-surface-variant">SORT:</span>
+<select class="bg-transparent border-none text-on-surface font-body-sm text-body-sm focus:ring-0 cursor-pointer outline-none">
+<option>Highest Value</option>
+<option>Recently Added</option>
+<option>A-Z</option>
+</select>
+</div>
+<div class="flex gap-1">
+<button class="p-1 rounded bg-surface-container-high text-primary"><span class="material-symbols-outlined">grid_view</span></button>
+<button class="p-1 rounded hover:bg-surface-container-low text-on-surface-variant"><span class="material-symbols-outlined">view_list</span></button>
+</div>
+</div>
+</div>
+<!-- Collection Grid -->
+<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6">
+<!-- Card Item 1 -->
+<article class="bg-[#FFFFFF] rounded-xl border border-surface-variant shadow-[0px_4px_20px_rgba(0,0,0,0.05)] overflow-hidden hover:shadow-[0px_12px_40px_rgba(0,0,0,0.12)] hover:-translate-y-1 transition-all duration-300 group cursor-pointer flex flex-col h-full">
+<div class="p-4 flex-1">
+<div class="card-image-container w-full bg-surface-container-low rounded-lg relative overflow-hidden mb-4 group-hover:scale-[1.02] transition-transform duration-500">
+<div class="absolute inset-0 bg-gradient-to-tr from-surface-container to-surface opacity-50 z-0"></div>
+<img alt="Charizard Base Set" class="absolute inset-0 w-full h-full object-contain p-2 z-10 drop-shadow-lg" data-alt="A pristine, highly detailed digital illustration of a fiery, draconic creature trading card housed in a thick, clear plastic grading slab. Bright, warm lighting highlights the holographic foil patterns on the card. The slab has a shiny, professional metallic label indicating 'PSA 10 GEM MT'. The background is pure white to emphasize the product. High contrast, modern aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBzH87BMX7yU6ntH9H3n57pDCEs9h5TFzSPGGQGSo1YG4EsONeT_x1WbNuwq9SSbXe_BDK-gVXSbJp1t0RTldS_NhltUuLBVstIF0Rlrr1Q6u2YkZim5VuzvWL0WJWQQu4ZwKQcKRUuSWdZRKAStcEeePeohWXl-8kVxAu3H7fyqeqhArk9hjCFiM0cILNexItB7skmI1qyGHGx3QLQ86m8oH_eiklQKpQEpEkN6d-H06uF4JSivPuZRQpLRBHtHrAigIumI2ejAWv1"/>
+<div class="absolute top-2 right-2 z-20 flex gap-1">
+<span class="bg-surface/90 backdrop-blur text-primary px-1.5 py-0.5 rounded font-label-mono text-[10px] font-bold border border-outline-variant shadow-sm">1ST ED</span>
+</div>
+</div>
+<div class="flex justify-between items-start mb-1">
+<h3 class="font-title-md text-title-md text-on-surface truncate pr-2">Charizard</h3>
+<span class="type-fire px-1.5 py-0.5 rounded-full font-label-mono text-[10px] shrink-0">FIRE</span>
+</div>
+<p class="font-label-mono text-[11px] text-on-surface-variant mb-3">Base Set • Holo Rare</p>
+<div class="flex items-center gap-2 mb-4">
+<div class="bg-surface-container text-on-surface px-2 py-1 rounded border border-outline-variant inline-flex items-center gap-1 font-title-md text-[14px]">
+<span class="text-on-surface-variant text-[10px] uppercase font-bold">PSA</span> 9
+                            </div>
+</div>
+</div>
+<div class="border-t border-surface-variant bg-surface-bright px-4 py-3 flex justify-between items-center mt-auto">
+<div class="flex flex-col">
+<span class="font-label-mono text-[10px] text-on-surface-variant uppercase tracking-wider">Est. Value</span>
+<span class="font-label-mono text-[14px] text-secondary font-bold">$1,250.00</span>
+</div>
+<span class="flex items-center text-[#198754] font-label-mono text-[11px]">
+<span class="material-symbols-outlined text-[12px]">trending_up</span> 1.2%
+                        </span>
+</div>
+</article>
+<!-- Card Item 2 -->
+<article class="bg-[#FFFFFF] rounded-xl border border-surface-variant shadow-[0px_4px_20px_rgba(0,0,0,0.05)] overflow-hidden hover:shadow-[0px_12px_40px_rgba(0,0,0,0.12)] hover:-translate-y-1 transition-all duration-300 group cursor-pointer flex flex-col h-full">
+<div class="p-4 flex-1">
+<div class="card-image-container w-full bg-surface-container-low rounded-lg relative overflow-hidden mb-4 group-hover:scale-[1.02] transition-transform duration-500">
+<img alt="Mewtwo Shadowless" class="absolute inset-0 w-full h-full object-contain p-2 z-10 drop-shadow-lg" data-alt="A pristine, highly detailed digital illustration of a sleek, psychic feline creature trading card housed in a thick, clear plastic grading slab. Cool, bright lighting emphasizes the purple holographic swirls on the card. The slab has a shiny, professional metallic label indicating 'BGS 9.5 GEM MINT'. The background is pure white. High contrast, clean modern presentation." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCNaPBjab2hWUnxqbTn8MHY_Er1AR5ua2_2_exzIM3UDT4bIP8qIVVQy47xYgGtzOH3Ek53w43AfNWJ-jItYguZboji_mEymXEbiAcIcljZaJx5rf1S0t0eHwi1RqoviYp3yN7UsFkfUNoF6e8ULyBBILUl6vcDfHIkcuKvLt79zcMKyrSiM1xENYvjK5L10-s-7QYwrn3jjnBMKd4EbcwdIoi4r5owyPsSMILdkh5FFMbPQYCY8CBeIEWNFFDJcI8WbUfwPfFal4NZ"/>
+</div>
+<div class="flex justify-between items-start mb-1">
+<h3 class="font-title-md text-title-md text-on-surface truncate pr-2">Mewtwo</h3>
+<span class="bg-[#6f42c1]/10 text-[#6f42c1] px-1.5 py-0.5 rounded-full font-label-mono text-[10px] shrink-0">PSYCHIC</span>
+</div>
+<p class="font-label-mono text-[11px] text-on-surface-variant mb-3">Base Set (Shadowless)</p>
+<div class="flex items-center gap-2 mb-4">
+<div class="bg-surface-container text-on-surface px-2 py-1 rounded border border-outline-variant inline-flex items-center gap-1 font-title-md text-[14px]">
+<span class="text-on-surface-variant text-[10px] uppercase font-bold">BGS</span> 9.5
+                            </div>
+</div>
+</div>
+<div class="border-t border-surface-variant bg-surface-bright px-4 py-3 flex justify-between items-center mt-auto">
+<div class="flex flex-col">
+<span class="font-label-mono text-[10px] text-on-surface-variant uppercase tracking-wider">Est. Value</span>
+<span class="font-label-mono text-[14px] text-secondary font-bold">$850.00</span>
+</div>
+<span class="flex items-center text-primary font-label-mono text-[11px]">
+<span class="material-symbols-outlined text-[12px]">trending_down</span> 0.5%
+                        </span>
+</div>
+</article>
+<!-- Card Item 3 -->
+<article class="bg-[#FFFFFF] rounded-xl border border-surface-variant shadow-[0px_4px_20px_rgba(0,0,0,0.05)] overflow-hidden hover:shadow-[0px_12px_40px_rgba(0,0,0,0.12)] hover:-translate-y-1 transition-all duration-300 group cursor-pointer flex flex-col h-full">
+<div class="p-4 flex-1">
+<div class="card-image-container w-full bg-surface-container-low rounded-lg relative overflow-hidden mb-4 group-hover:scale-[1.02] transition-transform duration-500">
+<img alt="Blastoise Base Set" class="absolute inset-0 w-full h-full object-contain p-2 z-10 drop-shadow-lg" data-alt="A pristine digital illustration of a large aquatic turtle creature trading card in a clear plastic grading slab. Soft, slightly bluish lighting emphasizes the watery holographic background of the card art. The grading slab label reads 'CGC 9'. The setting is minimalist and sterile white, highlighting the collectible nature of the object." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCgd53XJO0p3mpC4e6sbm9U_nedbOLUVCMJf87JcYqzFQzVPOdHEWNvjIzqRXcaZ5M_bh-e9g9BXHAX2IhpsobwLBa2BNGey7bFmXZhMDmlOx9zLcR3_2ERYi-Evxrp6ZtPJTROpLcOZaA3ub_xES0TkPvS7oT0_eNFdYvSRtQ1Xhzjj9w45ACnyzcPtqhsQw5YtpZGs64ae0XjSZvxJsxxK4sHfhNPI2YCcNHGIZEcvaZEqkBKUlBgYUUTCfyDzmWccpVPK2EgHfnr"/>
+</div>
+<div class="flex justify-between items-start mb-1">
+<h3 class="font-title-md text-title-md text-on-surface truncate pr-2">Blastoise</h3>
+<span class="type-water px-1.5 py-0.5 rounded-full font-label-mono text-[10px] shrink-0">WATER</span>
+</div>
+<p class="font-label-mono text-[11px] text-on-surface-variant mb-3">Base Set • Holo Rare</p>
+<div class="flex items-center gap-2 mb-4">
+<div class="bg-surface-container text-on-surface px-2 py-1 rounded border border-outline-variant inline-flex items-center gap-1 font-title-md text-[14px]">
+<span class="text-on-surface-variant text-[10px] uppercase font-bold">CGC</span> 9
+                            </div>
+</div>
+</div>
+<div class="border-t border-surface-variant bg-surface-bright px-4 py-3 flex justify-between items-center mt-auto">
+<div class="flex flex-col">
+<span class="font-label-mono text-[10px] text-on-surface-variant uppercase tracking-wider">Est. Value</span>
+<span class="font-label-mono text-[14px] text-secondary font-bold">$420.00</span>
+</div>
+<span class="flex items-center text-on-surface-variant font-label-mono text-[11px]">
+<span class="material-symbols-outlined text-[12px]">trending_flat</span> 0.0%
+                        </span>
+</div>
+</article>
+<!-- Add more cards as needed following the exact same structure to build out the grid -->
+</div>
+</div>
+</main>
+<!-- BottomNavBar Mobile -->
+<nav class="md:hidden fixed bottom-0 w-full bg-surface/90 backdrop-blur-md z-50 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] border-t border-surface-variant pb-safe">
+<div class="flex justify-around items-center h-16">
+<a class="flex flex-col items-center justify-center w-full h-full text-on-surface-variant hover:text-primary" href="#">
+<span class="material-symbols-outlined text-[24px]">dashboard</span>
+<span class="font-label-mono text-[10px] mt-1">Dashboard</span>
+</a>
+<a class="flex flex-col items-center justify-center w-full h-full text-primary relative" href="#">
+<div class="absolute top-1 w-12 h-1 bg-primary rounded-full"></div>
+<span class="material-symbols-outlined text-[24px]" style="font-variation-settings: 'FILL' 1;">style</span>
+<span class="font-label-mono text-[10px] mt-1 font-bold">Collection</span>
+</a>
+<a class="flex flex-col items-center justify-center w-full h-full text-on-surface-variant hover:text-primary" href="#">
+<span class="material-symbols-outlined text-[24px]">show_chart</span>
+<span class="font-label-mono text-[10px] mt-1">Market</span>
+</a>
+<a class="flex flex-col items-center justify-center w-full h-full text-on-surface-variant hover:text-primary" href="#">
+<span class="material-symbols-outlined text-[24px]">auto_awesome_motion</span>
+<span class="font-label-mono text-[10px] mt-1">Sets</span>
+</a>
+</div>
+</nav>
+<!-- FAB Mobile (Scan) -->
+<button class="md:hidden fixed bottom-20 right-4 w-14 h-14 bg-primary text-on-primary rounded-full shadow-[0px_4px_20px_rgba(188,1,0,0.4)] flex items-center justify-center z-50 hover:scale-105 active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[28px]">qr_code_scanner</span>
+</button>
+</body></html>

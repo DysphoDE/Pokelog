@@ -1,0 +1,11 @@
+# Laufzeitdaten (SQLite-Datenbank)
+/data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

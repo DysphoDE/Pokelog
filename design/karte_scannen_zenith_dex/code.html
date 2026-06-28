@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Zenith Dex - Scan New Card</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary-fixed-variant": "#524600",
+                        "tertiary-fixed": "#ffe24a",
+                        "surface": "#f9f9fc",
+                        "on-background": "#1a1c1e",
+                        "surface-container-high": "#e8e8ea",
+                        "on-tertiary-container": "#4a3f00",
+                        "secondary-container": "#080cff",
+                        "on-surface-variant": "#603e39",
+                        "on-secondary-container": "#b6baff",
+                        "primary": "#bc0100",
+                        "on-tertiary": "#ffffff",
+                        "outline": "#956d67",
+                        "secondary": "#0001c0",
+                        "on-error-container": "#93000a",
+                        "inverse-on-surface": "#f0f0f3",
+                        "outline-variant": "#ebbbb4",
+                        "surface-container": "#eeeef0",
+                        "on-error": "#ffffff",
+                        "on-primary-fixed-variant": "#930100",
+                        "surface-container-low": "#f3f3f6",
+                        "on-secondary": "#ffffff",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-variant": "#e2e2e5",
+                        "on-primary-container": "#fffbff",
+                        "on-primary-fixed": "#410000",
+                        "on-secondary-fixed": "#00006e",
+                        "tertiary-container": "#c4ab00",
+                        "on-tertiary-fixed": "#211b00",
+                        "on-surface": "#1a1c1e",
+                        "secondary-fixed-dim": "#bec2ff",
+                        "on-primary": "#ffffff",
+                        "on-secondary-fixed-variant": "#0000ef",
+                        "surface-dim": "#dadadc",
+                        "surface-bright": "#f9f9fc",
+                        "inverse-surface": "#2f3133",
+                        "error-container": "#ffdad6",
+                        "error": "#ba1a1a",
+                        "primary-fixed": "#ffdad4",
+                        "surface-container-highest": "#e2e2e5",
+                        "tertiary": "#6d5e00",
+                        "primary-container": "#eb0000",
+                        "background": "#f9f9fc",
+                        "inverse-primary": "#ffb4a8",
+                        "secondary-fixed": "#e0e0ff",
+                        "tertiary-fixed-dim": "#e3c600",
+                        "primary-fixed-dim": "#ffb4a8",
+                        "surface-tint": "#c00100"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-md": "12px",
+                        "stack-lg": "32px",
+                        "container-padding": "24px",
+                        "base": "8px",
+                        "gutter": "16px",
+                        "stack-sm": "4px"
+                    },
+                    "fontFamily": {
+                        "body-lg": ["Plus Jakarta Sans"],
+                        "body-sm": ["Plus Jakarta Sans"],
+                        "headline-lg": ["Plus Jakarta Sans"],
+                        "title-md": ["Plus Jakarta Sans"],
+                        "headline-lg-mobile": ["Plus Jakarta Sans"],
+                        "display-lg": ["Plus Jakarta Sans"],
+                        "label-mono": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+                        "title-md": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "headline-lg-mobile": ["24px", { "lineHeight": "32px", "fontWeight": "700" }],
+                        "display-lg": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "800" }],
+                        "label-mono": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .scanner-corners::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0;
+            width: 40px; height: 40px;
+            border-top: 4px solid #bc0100;
+            border-left: 4px solid #bc0100;
+            border-top-left-radius: 12px;
+        }
+        .scanner-corners::after {
+            content: '';
+            position: absolute;
+            top: 0; right: 0;
+            width: 40px; height: 40px;
+            border-top: 4px solid #bc0100;
+            border-right: 4px solid #bc0100;
+            border-top-right-radius: 12px;
+        }
+        .scanner-corners-bottom::before {
+            content: '';
+            position: absolute;
+            bottom: 0; left: 0;
+            width: 40px; height: 40px;
+            border-bottom: 4px solid #bc0100;
+            border-left: 4px solid #bc0100;
+            border-bottom-left-radius: 12px;
+        }
+        .scanner-corners-bottom::after {
+            content: '';
+            position: absolute;
+            bottom: 0; right: 0;
+            width: 40px; height: 40px;
+            border-bottom: 4px solid #bc0100;
+            border-right: 4px solid #bc0100;
+            border-bottom-right-radius: 12px;
+        }
+        
+        @keyframes scanline {
+            0% { top: 0%; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { top: 100%; opacity: 0; }
+        }
+        .scan-line {
+            animation: scanline 3s linear infinite;
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body-lg h-screen flex overflow-hidden">
+<!-- Suppression Logic Applied: Transactional Screen (Scan & Add Card). Navigation shell suppressed to focus entirely on the scanning canvas. -->
+<main class="w-full h-full relative bg-inverse-surface text-on-primary">
+<!-- Close Button (Temporary Departure) -->
+<button class="absolute top-8 left-8 z-50 w-12 h-12 rounded-full bg-surface/20 backdrop-blur-md flex items-center justify-center hover:bg-surface/30 transition-colors">
+<span class="material-symbols-outlined text-white" data-icon="close">close</span>
+</button>
+<!-- Camera Viewfinder Area -->
+<div class="absolute inset-0 z-0">
+<!-- Simulated Camera Feed -->
+<div class="w-full h-full bg-cover bg-center opacity-40" data-alt="A slightly blurred, real-world desk environment seen through a smartphone camera lens. A high-end minimalist setting with soft, natural lighting coming from a nearby window. The desk surface is a pristine, light-colored matte material. The overall tone is modern, clean, and subtly atmospheric, indicating a high-tech scanning process." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDFa8lheM1tu9194e0zJbTuFcICK7VqMZWWbe6pGOQL2pQ0x_eqSxEcFYX5de6SshjsGBtorzYXnSjIFXkgJor4RSqokz1PIkCCBr7PeAW66meOTHqn1__aGVsosESvm2q1Cj5W7COueWRSG4tRKpnN4DSyDUVqi-KnNUdx2rAgxG-TLd33a_osBDnc1AlZMC38Tv-aXz0kGp8aV8l2mRa2vQzu3jGQJ6yd0m6riMXbq63ENgvhm3KQntVvnp_VXupCBnna5lpC1bEs')"></div>
+<!-- Dark Overlay -->
+<div class="absolute inset-0 bg-black/60 backdrop-blur-[2px]"></div>
+</div>
+<!-- Scanning Interface -->
+<div class="relative z-10 w-full h-full flex flex-col items-center justify-center p-8">
+<!-- Header Text -->
+<div class="text-center mb-stack-lg">
+<h1 class="font-headline-lg text-headline-lg text-white mb-stack-sm">Align Card</h1>
+<p class="font-body-lg text-body-lg text-surface-variant">Position the card within the frame to scan.</p>
+</div>
+<!-- Viewfinder Frame -->
+<div class="relative w-full max-w-[340px] aspect-[2.5/3.5] mx-auto mb-stack-lg">
+<!-- Inner Clear Area (Simulated by box-shadow on a pseudo element if we wanted full masking, but here we'll use an empty div with borders) -->
+<div class="absolute inset-0 rounded-xl overflow-hidden">
+<!-- The bright area -->
+<div class="w-full h-full bg-cover bg-center" data-alt="A perfectly clear, in-focus view of a rare, holographic trading card lying flat on the clean desk. The card is a classic, highly sought-after design, featuring vibrant colors and a subtle metallic sheen. The lighting is perfectly balanced to eliminate glare, highlighting the pristine condition of the card. The overall aesthetic is premium, high-tech, and sharply defined." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAZ9EQVWaAvbPnLFaEECqAxTyMBNU_6RWTpN-lZNbK0tB2xd03HuMQJdJK0vtSfrBr-po8gSyAh7tZige4PHWodyQDk5PuOVyb9gHP6dO-BdHB66E0VKRSPPzf8GwcOjULAXOpQ9gyLEtKK_PwtP9mdqa63XQZMCxgjjf65YRgk-8MlujpvvCI1cjcLg1GyEXIgQ6HB6i7ckupPnFMVy8Af91UugObEUn8VcqMkq6hFmr0Mop-r--5t3SBUAEBIRppkrTfHD2UeSOi9')"></div>
+<!-- Scan Line Overlay -->
+<div class="scan-line absolute left-0 w-full h-1 bg-primary shadow-[0_0_15px_rgba(188,1,0,0.8)] z-20"></div>
+</div>
+<!-- Corner Guides -->
+<div class="scanner-corners absolute inset-0 z-30 pointer-events-none"></div>
+<div class="scanner-corners-bottom absolute inset-0 z-30 pointer-events-none"></div>
+<!-- Center Reticle -->
+<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 opacity-50 z-30 pointer-events-none">
+<span class="material-symbols-outlined text-white text-3xl" data-icon="add">add</span>
+</div>
+</div>
+<!-- Bottom Controls / Status -->
+<div class="w-full max-w-md mx-auto">
+<!-- Detecting State Panel -->
+<div class="bg-surface/10 backdrop-blur-lg rounded-xl p-6 border border-white/10 flex items-center justify-between">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center animate-pulse">
+<span class="material-symbols-outlined text-primary" data-icon="document_scanner">document_scanner</span>
+</div>
+<div>
+<p class="font-label-mono text-label-mono text-tertiary-fixed mb-1 uppercase">Status</p>
+<p class="font-title-md text-title-md text-white">Detecting...</p>
+</div>
+</div>
+<!-- Manual Entry Fallback -->
+<button class="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors font-label-mono text-label-mono text-white">
+                        Manual Entry
+                    </button>
+</div>
+</div>
+</div>
+</main>
+</body></html>

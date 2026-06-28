@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Card Detail - Zenith Dex</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-tertiary-fixed-variant": "#524600",
+                      "tertiary-fixed": "#ffe24a",
+                      "surface": "#f9f9fc",
+                      "on-background": "#1a1c1e",
+                      "surface-container-high": "#e8e8ea",
+                      "on-tertiary-container": "#4a3f00",
+                      "secondary-container": "#080cff",
+                      "on-surface-variant": "#603e39",
+                      "on-secondary-container": "#b6baff",
+                      "primary": "#bc0100",
+                      "on-tertiary": "#ffffff",
+                      "outline": "#956d67",
+                      "secondary": "#0001c0",
+                      "on-error-container": "#93000a",
+                      "inverse-on-surface": "#f0f0f3",
+                      "outline-variant": "#ebbbb4",
+                      "surface-container": "#eeeef0",
+                      "on-error": "#ffffff",
+                      "on-primary-fixed-variant": "#930100",
+                      "surface-container-low": "#f3f3f6",
+                      "on-secondary": "#ffffff",
+                      "surface-container-lowest": "#ffffff",
+                      "surface-variant": "#e2e2e5",
+                      "on-primary-container": "#fffbff",
+                      "on-primary-fixed": "#410000",
+                      "on-secondary-fixed": "#00006e",
+                      "tertiary-container": "#c4ab00",
+                      "on-tertiary-fixed": "#211b00",
+                      "on-surface": "#1a1c1e",
+                      "secondary-fixed-dim": "#bec2ff",
+                      "on-primary": "#ffffff",
+                      "on-secondary-fixed-variant": "#0000ef",
+                      "surface-dim": "#dadadc",
+                      "surface-bright": "#f9f9fc",
+                      "inverse-surface": "#2f3133",
+                      "error-container": "#ffdad6",
+                      "error": "#ba1a1a",
+                      "primary-fixed": "#ffdad4",
+                      "surface-container-highest": "#e2e2e5",
+                      "tertiary": "#6d5e00",
+                      "primary-container": "#eb0000",
+                      "background": "#f9f9fc",
+                      "inverse-primary": "#ffb4a8",
+                      "secondary-fixed": "#e0e0ff",
+                      "tertiary-fixed-dim": "#e3c600",
+                      "primary-fixed-dim": "#ffb4a8",
+                      "surface-tint": "#c00100"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "stack-md": "12px",
+                      "stack-lg": "32px",
+                      "container-padding": "24px",
+                      "base": "8px",
+                      "gutter": "16px",
+                      "stack-sm": "4px"
+              },
+              "fontFamily": {
+                      "body-lg": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "body-sm": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "headline-lg": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "title-md": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "headline-lg-mobile": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "display-lg": [
+                              "Plus Jakarta Sans"
+                      ],
+                      "label-mono": [
+                              "JetBrains Mono"
+                      ]
+              },
+              "fontSize": {
+                      "body-lg": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-sm": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-lg": [
+                              "32px",
+                              {
+                                      "lineHeight": "40px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "title-md": [
+                              "20px",
+                              {
+                                      "lineHeight": "28px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "headline-lg-mobile": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "display-lg": [
+                              "48px",
+                              {
+                                      "lineHeight": "56px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "800"
+                              }
+                      ],
+                      "label-mono": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "500"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        .material-symbols-outlined {
+          font-variation-settings:
+          'FILL' 0,
+          'wght' 400,
+          'GRAD' 0,
+          'opsz' 24
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-lg min-h-screen flex text-body-lg">
+<!-- Main Content Canvas -->
+<main class="flex-1 min-w-0 bg-background pt-16 md:pt-0">
+<!-- Header / Nav Area for Detail View -->
+<header class="bg-surface/80 backdrop-blur-md border-b border-outline-variant h-16 px-8 flex items-center justify-between sticky top-0 z-30">
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:text-primary transition-colors flex items-center justify-center p-2 rounded-full hover:bg-surface-container-low">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-title-md text-title-md text-on-surface">Card Details</h1>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-primary font-bold uppercase font-label-mono text-label-mono tracking-wider px-4 py-2 border-2 border-primary rounded hover:bg-primary-fixed/10 transition-colors">
+                    Edit Condition
+                </button>
+<button class="bg-primary text-on-primary font-bold uppercase font-label-mono text-label-mono tracking-wider px-6 py-2 rounded shadow-[0_4px_14px_rgba(188,1,0,0.39)] hover:translate-y-[-1px] hover:shadow-[0_6px_20px_rgba(188,1,0,0.39)] active:shadow-none active:translate-y-[1px] transition-all">
+                    Mark as Sold
+                </button>
+</div>
+</header>
+<div class="max-w-7xl mx-auto p-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+<!-- Left Column: Card Imagery -->
+<div class="lg:col-span-4 flex flex-col gap-6">
+<!-- Premium Card Container -->
+<div class="bg-white rounded-xl shadow-[0_12px_40px_rgba(0,0,0,0.12)] border border-surface-variant p-6 flex flex-col items-center justify-center relative overflow-hidden group">
+<!-- Subtle gradient behind card -->
+<div class="absolute inset-0 bg-gradient-to-tr from-surface-container-lowest to-surface-container-low opacity-50 z-0"></div>
+<div class="relative z-10 w-full max-w-[300px] aspect-[2.5/3.5] rounded-lg shadow-lg overflow-hidden border-4 border-white transform transition-transform duration-500 group-hover:scale-105 group-hover:rotate-1">
+<img class="w-full h-full object-cover" data-alt="A high-resolution, perfectly lit, top-down photograph of a rare, holographic Charizard trading card in pristine condition. The card is encased in a highly polished, crystal-clear graded slab with a metallic silver label at the top. The lighting highlights the vibrant reds, oranges, and the rainbow holographic foil effect on the card art, set against a completely pure white, minimalist background to emphasize the premium, collector quality of the object." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCq62we2E3sMNIOoDu763H6J_16ETEmd6bq0m7SKDjHuSjib9pFxOXKJ6-vPPYfZxkzIEjIXdGJpLCbJh2s0Hh3dfPL89ZuEfusd2JjkItjr5OrFjFyAQXU7_JWbLRcllYTZzh1KLmwxk-A0p8SfGwXTDt0LzISo3aq3PLTWVrsbnMt5qIH59I3YjvskED6ZHdILtOD7hN1u5vKd8OSkS_UV61cWuIRGr8i6YjG79uFvvVppm9NsYlP7DO_pjSDQ2DwUAGc-lidfi6i"/>
+</div>
+</div>
+<!-- Condition & Quick Stats -->
+<div class="bg-white rounded-lg shadow-sm border border-surface-variant p-6 flex justify-between items-center">
+<div>
+<p class="font-label-mono text-label-mono text-on-surface-variant uppercase mb-1">Grade / Condition</p>
+<div class="flex items-center gap-2">
+<span class="bg-tertiary-container/20 text-on-tertiary-container font-bold px-3 py-1 rounded-full text-sm">PSA 10</span>
+<span class="font-title-md text-title-md">Gem Mint</span>
+</div>
+</div>
+<div class="text-right">
+<p class="font-label-mono text-label-mono text-on-surface-variant uppercase mb-1">Acquired</p>
+<p class="font-title-md text-title-md">Oct 24, 2022</p>
+</div>
+</div>
+</div>
+<!-- Right Column: Data & Analytics -->
+<div class="lg:col-span-8 flex flex-col gap-8">
+<!-- Title & Header Info -->
+<div>
+<div class="flex items-center gap-3 mb-2">
+<span class="bg-error-container/20 text-error font-label-mono text-label-mono px-2 py-1 rounded-full uppercase tracking-wider">Fire Type</span>
+<span class="bg-surface-container-highest text-on-surface-variant font-label-mono text-label-mono px-2 py-1 rounded-full uppercase tracking-wider">Hidden Fates SV49</span>
+</div>
+<h2 class="font-display-lg text-display-lg text-on-background mb-1">Shiny Charizard GX</h2>
+<p class="font-title-md text-title-md text-on-surface-variant">SV49/SV94 • Full Art Ultra Rare</p>
+</div>
+<!-- Bento Grid for Stats -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+<!-- Current Value -->
+<div class="bg-white rounded-lg shadow-sm border border-surface-variant p-6 col-span-2">
+<p class="font-label-mono text-label-mono text-on-surface-variant uppercase mb-2">Current Market Value</p>
+<div class="flex items-end gap-4">
+<span class="font-display-lg text-display-lg text-secondary">$1,245.00</span>
+<div class="flex items-center text-primary font-bold mb-2">
+<span class="material-symbols-outlined text-sm" data-icon="trending_up">trending_up</span>
+<span class="ml-1">+12.4% (30d)</span>
+</div>
+</div>
+</div>
+<!-- Pop Report -->
+<div class="bg-white rounded-lg shadow-sm border border-surface-variant p-6 flex flex-col justify-center">
+<p class="font-label-mono text-label-mono text-on-surface-variant uppercase mb-2">Pop Report (PSA 10)</p>
+<span class="font-headline-lg text-headline-lg text-on-surface">3,412</span>
+</div>
+</div>
+<!-- Chart Area Placeholder (Stylized) -->
+<div class="bg-white rounded-lg shadow-sm border border-surface-variant p-6 h-80 flex flex-col relative overflow-hidden">
+<div class="flex justify-between items-center mb-6">
+<h3 class="font-title-md text-title-md text-on-surface">Price History</h3>
+<div class="flex gap-2">
+<button class="px-3 py-1 text-sm font-label-mono text-label-mono rounded hover:bg-surface-container">1M</button>
+<button class="px-3 py-1 text-sm font-label-mono text-label-mono rounded bg-secondary-container/10 text-secondary font-bold">3M</button>
+<button class="px-3 py-1 text-sm font-label-mono text-label-mono rounded hover:bg-surface-container">1Y</button>
+<button class="px-3 py-1 text-sm font-label-mono text-label-mono rounded hover:bg-surface-container">ALL</button>
+</div>
+</div>
+<!-- Abstract Line Chart Visualization -->
+<div class="flex-1 relative w-full h-full flex items-end pt-4">
+<!-- Horizontal Grid Lines -->
+<div class="absolute inset-0 flex flex-col justify-between pt-10 pb-4">
+<div class="w-full h-px bg-surface-variant"></div>
+<div class="w-full h-px bg-surface-variant"></div>
+<div class="w-full h-px bg-surface-variant"></div>
+<div class="w-full h-px bg-surface-variant"></div>
+</div>
+<!-- SVG Line Chart (Decorative) -->
+<svg class="w-full h-full preserve-3d relative z-10" preserveaspectratio="none" viewbox="0 0 1000 200">
+<path d="M0,180 L100,170 L200,190 L300,150 L400,160 L500,110 L600,120 L700,80 L800,90 L900,40 L1000,20" fill="none" stroke="#0001c0" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"></path>
+<path d="M0,180 L100,170 L200,190 L300,150 L400,160 L500,110 L600,120 L700,80 L800,90 L900,40 L1000,20 L1000,200 L0,200 Z" fill="url(#chartGradient)" opacity="0.1"></path>
+<defs>
+<lineargradient id="chartGradient" x1="0%" x2="0%" y1="0%" y2="100%">
+<stop offset="0%" stop-color="#0001c0"></stop>
+<stop offset="100%" stop-color="transparent"></stop>
+</lineargradient>
+</defs>
+</svg>
+</div>
+</div>
+<!-- Detailed Metadata Grid -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+<div class="bg-surface-container-lowest p-4 rounded border border-surface-variant">
+<span class="block font-label-mono text-label-mono text-on-surface-variant mb-1">HP</span>
+<span class="font-title-md text-title-md text-on-surface">250</span>
+</div>
+<div class="bg-surface-container-lowest p-4 rounded border border-surface-variant">
+<span class="block font-label-mono text-label-mono text-on-surface-variant mb-1">Stage</span>
+<span class="font-title-md text-title-md text-on-surface">Stage 2</span>
+</div>
+<div class="bg-surface-container-lowest p-4 rounded border border-surface-variant">
+<span class="block font-label-mono text-label-mono text-on-surface-variant mb-1">Weakness</span>
+<span class="font-title-md text-title-md text-on-surface flex items-center gap-1"><span class="material-symbols-outlined text-sm">water_drop</span> x2</span>
+</div>
+<div class="bg-surface-container-lowest p-4 rounded border border-surface-variant">
+<span class="block font-label-mono text-label-mono text-on-surface-variant mb-1">Retreat</span>
+<span class="font-title-md text-title-md text-on-surface">3</span>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>
