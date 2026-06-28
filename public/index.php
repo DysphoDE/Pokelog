@@ -933,6 +933,10 @@ declare(strict_types=1);
                                      :style="`width: ${openSetData.set && openSetData.set.cardCount ? Math.round((openSetData.set.ownedCount / openSetData.set.cardCount) * 100) : 0}%`"></div>
                             </div>
                         </div>
+                        <!-- Deeplink dieses Sets kopieren -->
+                        <button @click="copyLink()" title="Link zu diesem Set kopieren" class="h-10 w-10 grid place-items-center rounded-full bg-surface-container hover:bg-surface-variant text-on-surface transition-colors shrink-0">
+                            <span class="material-symbols-outlined text-[20px]">link</span>
+                        </button>
                     </div>
 
                     <div x-show="setCardsLoading" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-3 md:gap-gutter">
@@ -1281,6 +1285,10 @@ declare(strict_types=1);
                     <span x-show="cardView && cardView.owned > 0" class="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-success text-white font-mono text-[11px] font-bold">
                         <span class="material-symbols-outlined text-[16px] fill-icon">check_circle</span><span x-text="'×' + (cardView ? cardView.owned : 0)"></span>
                     </span>
+                    <!-- Deeplink zu dieser Karte kopieren -->
+                    <button @click="copyLink()" title="Link zu dieser Karte kopieren" class="h-10 w-10 grid place-items-center rounded-full bg-surface-container hover:bg-surface-variant text-on-surface transition-colors shrink-0">
+                        <span class="material-symbols-outlined text-[20px]">link</span>
+                    </button>
                 </div>
 
                 <template x-if="cardView">

@@ -52,7 +52,6 @@ function pokelog() {
         setsLang: localStorage.getItem('pokelog_setslang') || 'de',
         // Monoton steigende Tokens, um veraltete Async-Antworten zu verwerfen.
         _tok: { search: 0, sets: 0, setView: 0, card: 0 },
-        _popping: false,
         // Platzhalter (Inline-SVG) fuer Karten ohne Bild (helles Zenith-Dex-Theme).
         placeholder: 'data:image/svg+xml;utf8,' + encodeURIComponent(
             '<svg xmlns="http://www.w3.org/2000/svg" width="245" height="342" viewBox="0 0 245 342">' +
@@ -133,15 +132,17 @@ function pokelog() {
         _camDenied: false,
         _lastNum: '',
         _cooldownUntil: 0,
+        _votes: [],                        // letzte erkannte Nummern (Frame-Voting)
         _fc: null, _nc: null, _tc: null,   // Offscreen-Canvases (frame/number/name)
 
         // ============================================================ Lifecycle
         async init() {
-            // Tab aus URL-Hash uebernehmen.
-            const hash = location.hash.replace('#', '');
-            if (this.tabs.some((t) => t.id === hash)) this.tab = hash;
-            // Zurueck-Button (Browser/Geste): Overlays schliessen statt App zu verlassen.
-            window.addEventListener('popstate', () => this.onPop());
+            // Routing: Tab, Set und Karte werden im URL-Hash abgebildet, damit
+            // jede Detailseite verlinkbar ist (Deeplinks). Back/Forward, Geste und
+            // manuelles Bearbeiten der URL fuehren ueber applyRoute() zum
+            // korrekten Zustand.
+            window.addEventListener('popstate', () => this.applyRoute());
+            window.addEventListener('hashchange', () => this.applyRoute());
             this.registerServiceWorker();
 
             // Anmeldestatus ermitteln (entscheidet Server- vs. Gast-Modus).
@@ -154,6 +155,9 @@ function pokelog() {
             this.loadOwned('de');
             this.loadOwned('ja');
             this.loadIndex('de').then(() => this.loadIndex('ja'));
+
+            // Deeplink/Tab aus der aktuellen URL anwenden (oeffnet ggf. Detail).
+            this.bootRoute();
         },
 
         // ============================================================ Auth
@@ -254,39 +258,114 @@ function pokelog() {
             await this.loadStats();
         },
 
-        // Schliesst das oberste Overlay (Karte > Set-Detail), sonst Tab aus Hash.
-        onPop() {
-            this._popping = true;
-            try {
-                if (this.cardView) { this.cardView = null; return; }
-                if (this.openSetData) { this.openSetData = null; return; }
-                const hash = location.hash.replace('#', '');
-                if (this.tabs.some((t) => t.id === hash)) this.tab = hash;
-            } finally {
-                this._popping = false;
+        // ============================================================ Routing
+        // Liest den aktuellen Hash und liefert das Ziel der Ansicht.
+        // Formate: "#sets" (Tab), "#set/<lang>/<id>", "#card/<lang>/<id>".
+        routeFromHash() {
+            const raw = (location.hash || '').replace(/^#/, '');
+            if (!raw) return { tab: 'home' };
+            const parts = raw.split('/');
+            const kind = parts[0];
+            if (kind === 'card' && parts.length >= 3) {
+                return { kind: 'card', lang: parts[1] === 'ja' ? 'ja' : 'de', id: this._decodeId(parts.slice(2).join('/')) };
+            }
+            if (kind === 'set' && parts.length >= 3) {
+                return { kind: 'set', lang: parts[1] === 'ja' ? 'ja' : 'de', id: this._decodeId(parts.slice(2).join('/')) };
+            }
+            if (this.tabs.some((t) => t.id === kind)) return { tab: kind };
+            return { tab: 'home' };
+        },
+
+        _decodeId(s) { try { return decodeURIComponent(s); } catch (e) { return s; } },
+        _cardHash(id, lang) { return 'card/' + (lang === 'ja' ? 'ja' : 'de') + '/' + encodeURIComponent(id); },
+        _setHash(id, lang) { return 'set/' + (lang === 'ja' ? 'ja' : 'de') + '/' + encodeURIComponent(id); },
+
+        // Setzt den Hash (Standard: neuer History-Eintrag) und gleicht den
+        // Zustand ab. Gleicher Hash -> nur abgleichen (kein Doppel-Eintrag).
+        navigate(hash, replace = false) {
+            const cur = (location.hash || '').replace(/^#/, '');
+            if (cur === hash) { this.applyRoute(); return; }
+            const url = '#' + hash;
+            if (replace) history.replaceState({ pl: hash }, '', url);
+            else history.pushState({ pl: hash }, '', url);
+            this.applyRoute();
+        },
+
+        // Gleicht den App-Zustand (Tab/Set/Karte) an den aktuellen Hash an.
+        // Idempotent: bereits offene Ansichten werden nicht neu geladen.
+        applyRoute() {
+            const r = this.routeFromHash();
+            if (r.kind === 'card') {
+                if (!this.cardView || !this.cardView.base || this.cardView.base.id !== r.id) {
+                    this.openCard({ id: r.id, lang: r.lang });
+                }
+                return;
+            }
+            // Kein Karten-Hash mehr -> offene Karte schliessen (Token bumpen,
+            // damit eine noch laufende Detailabfrage verworfen wird).
+            if (this.cardView) { this.cardView = null; this._tok.card++; }
+
+            if (r.kind === 'set') {
+                if (!this.openSetData || !this.openSetData.set || this.openSetData.set.id !== r.id) {
+                    this.openSetView({ id: r.id, lang: r.lang });
+                }
+                return;
+            }
+            if (this.openSetData) { this.openSetData = null; this._tok.setView++; }
+
+            this.activateTab(r.tab || 'home');
+        },
+
+        // Beim Start: fuer Deeplinks einen sinnvollen Zurueck-Stack erzeugen
+        // (Eltern-Liste + Detail), damit der Zurueck-Button in der App bleibt.
+        bootRoute() {
+            const r = this.routeFromHash();
+            if (r.kind === 'card') {
+                this.navigate('search', true);
+                this.navigate(this._cardHash(r.id, r.lang));
+            } else if (r.kind === 'set') {
+                this.navigate('sets', true);
+                this.navigate(this._setHash(r.id, r.lang));
+            } else {
+                this.navigate(r.tab || 'home', true);
             }
         },
 
-        // Legt einen History-Eintrag fuer ein Overlay an (fuer den Zurueck-Button).
-        pushOverlay(kind) {
-            if (this._popping) return;
-            history.pushState({ pl: kind }, '');
-        },
+        // Wechselt den Tab (per Hash, damit verlinkbar). Overlays schliessen sich.
+        setTab(id) { this.navigate(id); },
 
-        setTab(id) {
+        // Fuehrt die Tab-Wechsel-Nebenwirkungen aus (ohne den Hash zu setzen).
+        activateTab(id) {
+            if (!this.tabs.some((t) => t.id === id)) id = 'home';
             if (id !== 'scan' && this.cameraActive) this.stopCamera();
-            // Offene Overlays schliessen, damit der Zurueck-Stack sauber bleibt.
-            if (this.openSetData) this.openSetData = null;
+            const changed = this.tab !== id;
             this.tab = id;
-            location.hash = id;
-            if (id === 'home') this.loadStats();
-            if (id === 'stats') this.loadStats();
+            if (!changed) return;
+            if (id === 'home' || id === 'stats') this.loadStats();
             if (id === 'collection') this.loadCollection();
             if (id === 'sets') this.loadSets();
             if (id === 'admin') this.loadUsers();
             // Scan-Tab: Kamera automatisch starten (sofern nicht zuvor abgelehnt).
             if (id === 'scan' && !this.cameraActive && !this._camDenied) {
                 this.$nextTick(() => this.startCamera());
+            }
+        },
+
+        // Kopiert den Deeplink der aktuellen Ansicht in die Zwischenablage.
+        async copyLink() {
+            const url = location.href;
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(url);
+                } else {
+                    const ta = document.createElement('textarea');
+                    ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+                    document.body.appendChild(ta); ta.select();
+                    document.execCommand('copy'); document.body.removeChild(ta);
+                }
+                this.showToast('Link kopiert ✓');
+            } catch (e) {
+                this.showToast('Link: ' + url);
             }
         },
 
@@ -702,9 +781,10 @@ function pokelog() {
         async openSetView(set) {
             this.setCardsLoading = true;
             this.openSetData = { set, cards: [] };
-            this.pushOverlay('set');
             const tok = ++this._tok.setView;
             const setLang = set.lang || this.setsLang;
+            // Deeplink setzen (dedupliziert, wenn der Aufruf vom Router stammt).
+            this.navigate(this._setHash(set.id, setLang));
             try {
                 const data = await this.api('?action=set&lang=' + setLang + '&id=' + encodeURIComponent(set.id));
                 if (tok !== this._tok.setView) return;
@@ -721,8 +801,9 @@ function pokelog() {
         },
 
         closeSetView() {
-            // Ueber die History schliessen, damit Zurueck-Stack konsistent bleibt.
-            if (!this._popping) { history.back(); } else { this.openSetData = null; }
+            // Ueber die History schliessen, damit der Zurueck-Stack konsistent
+            // bleibt; der bootRoute()-Stack haelt uns bei Deeplinks in der App.
+            history.back();
         },
 
         // Holt fehlende Cardmarket-Preise fuer eine Liste angezeigter Karten
@@ -799,7 +880,8 @@ function pokelog() {
             const cardLang = card.lang || 'de';
             this.cardView = { loading: true, lang: cardLang, base: card, card: null, owned: card.owned || 0, names: null, price: card.pricing || null, override: null, related: { set: [], prints: [] } };
             this.overrideInput = '';
-            this.pushOverlay('card');
+            // Deeplink setzen (dedupliziert, wenn der Aufruf vom Router stammt).
+            this.navigate(this._cardHash(card.id, cardLang));
             this.pushRecent(card, cardLang);
             // Hinzufuegen-Formular vorbelegen (wird nach Laden ggf. verfeinert).
             // Druck-Sprache = Katalog der Karte (JA-Karten sind eigene Karten).
@@ -833,6 +915,16 @@ function pokelog() {
                     const ct = c.set.cardCount || {};
                     this.addCard.setTotal = this.addCard.setTotal || ct.official || ct.total || null;
                 }
+                // Stammdaten ergaenzen: Bei einem Deeplink kennt die Karte nur
+                // ID + Sprache; Name/Nummer/Bild kommen erst aus der Detailabfrage.
+                if (!card.name && c.name) card.name = c.name;
+                if ((card.localId == null || card.localId === '') && c.localId != null) card.localId = c.localId;
+                if (!card.image && c.image) card.image = c.image + '/low.webp';
+                if (!card.set && c.set && c.set.name) card.set = c.set.name;
+                this.addCard.name = this.addCard.name || c.name || card.name || '';
+                if (!this.addCard.localId && c.localId != null) this.addCard.localId = c.localId;
+                // Zuletzt-angesehen mit vollstaendigen Daten aktualisieren.
+                this.pushRecent(card, cardLang);
 
                 this.cardView = {
                     loading: false, lang: data.lang || cardLang, base: card,
@@ -860,7 +952,9 @@ function pokelog() {
         },
 
         closeCard() {
-            if (!this._popping) { history.back(); } else { this.cardView = null; }
+            // Ueber die History schliessen; der bootRoute()-Stack haelt uns bei
+            // Deeplinks in der App (statt die Seite ganz zu verlassen).
+            history.back();
         },
 
         // Setzt eine manuelle Preis-Korrektur (uebersteuert die Quelle).
@@ -1418,6 +1512,7 @@ function pokelog() {
             this._scanRun = true;
             this.scanLive = true;
             this._lastNum = '';
+            this._votes = [];
             this.scanStatus = 'scanning';
             this.scanHint = 'Halte die Kartennummer (z. B. 136/189) scharf in den Rahmen.';
             this.scanLoop();
@@ -1429,6 +1524,7 @@ function pokelog() {
             this.scanError = '';
             this.ocrSummary = '';
             this._lastNum = '';
+            this._votes = [];
             this._cooldownUntil = 0;
             this.scanStatus = 'scanning';
             this.scanHint = 'Halte die Kartennummer (z. B. 136/189) scharf in den Rahmen.';
@@ -1473,6 +1569,55 @@ function pokelog() {
             return target;
         },
 
+        // Otsu-Schwellwert + Auto-Polaritaet -> sauberes Schwarz-auf-Weiss.
+        // Macht die Ziffern-OCR robuster als reines Graustufenbild.
+        _binarize(canvas) {
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            const w = canvas.width, h = canvas.height;
+            const total = w * h;
+            if (!total) return canvas;
+            const img = ctx.getImageData(0, 0, w, h);
+            const d = img.data;
+            const hist = new Array(256).fill(0);
+            for (let i = 0; i < d.length; i += 4) hist[d[i]]++;
+            let sum = 0;
+            for (let t = 0; t < 256; t++) sum += t * hist[t];
+            let sumB = 0, wB = 0, maxVar = -1, thr = 127;
+            for (let t = 0; t < 256; t++) {
+                wB += hist[t];
+                if (!wB) continue;
+                const wF = total - wB;
+                if (!wF) break;
+                sumB += t * hist[t];
+                const mB = sumB / wB, mF = (sum - sumB) / wF;
+                const between = wB * wF * (mB - mF) * (mB - mF);
+                if (between > maxVar) { maxVar = between; thr = t; }
+            }
+            let dark = 0;
+            for (let i = 0; i < d.length; i += 4) if (d[i] <= thr) dark++;
+            const invert = dark > total / 2;   // Hintergrund dunkel -> Text hell -> invertieren
+            for (let i = 0; i < d.length; i += 4) {
+                let v = d[i] <= thr ? 0 : 255;
+                if (invert) v = 255 - v;
+                d[i] = d[i + 1] = d[i + 2] = v;
+            }
+            ctx.putImageData(img, 0, 0);
+            return canvas;
+        },
+
+        // Liest die Sammlernummer aus dem unteren Streifen (binarisiert).
+        async _readNumber() {
+            if (!this._nc) this._nc = document.createElement('canvas');
+            this._regionCanvas(this._nc, 0.80, 1.0, 2.2);
+            this._binarize(this._nc);
+            await this._worker.setParameters({
+                tessedit_char_whitelist: '0123456789/ ',
+                tessedit_pageseg_mode: '6',
+            });
+            const { data: { text } } = await this._worker.recognize(this._nc);
+            return (text || '').match(/(\d{1,3})\s*\/\s*(\d{1,3})/);
+        },
+
         async scanTick() {
             if (!this.cameraActive || this._scanBusy) return;
             // Pause, solange die Detailansicht offen ist.
@@ -1483,28 +1628,31 @@ function pokelog() {
 
             this._scanBusy = true;
             try {
-                if (!this._nc) this._nc = document.createElement('canvas');
-                // Unteren Streifen (Sammlernummer) lesen – nur Ziffern + "/".
-                const numCanvas = this._regionCanvas(this._nc, 0.80, 1.0, 2.2);
-                await this._worker.setParameters({
-                    tessedit_char_whitelist: '0123456789/ ',
-                    tessedit_pageseg_mode: '6',
-                });
-                const { data: { text: numText } } = await this._worker.recognize(numCanvas);
-                const m = (numText || '').match(/(\d{1,3})\s*\/\s*(\d{1,3})/);
+                const m = await this._readNumber();
 
-                if (!m) {
+                // Frame-Voting: nur akzeptieren, was in den letzten Frames
+                // mehrfach gelesen wurde -> kaum Fehlerkennungen / kein Flackern.
+                const cand = m ? (parseInt(m[1], 10) + '/' + parseInt(m[2], 10)) : null;
+                this._votes.push(cand);
+                if (this._votes.length > 3) this._votes.shift();
+                const counts = {};
+                for (const v of this._votes) if (v) counts[v] = (counts[v] || 0) + 1;
+                let best = null, bestC = 0;
+                for (const k in counts) if (counts[k] > bestC) { best = k; bestC = counts[k]; }
+
+                if (!best || bestC < 2) {
                     this._lastNum = '';
                     if (this.scanStatus !== 'found') {
                         this.scanStatus = 'scanning';
-                        this.scanHint = 'Halte die Kartennummer (z. B. 136/189) scharf in den Rahmen.';
+                        this.scanHint = cand
+                            ? 'Nummer wird geprüft … ruhig halten.'
+                            : 'Halte die Kartennummer (z. B. 136/189) scharf in den Rahmen.';
                     }
                     return;
                 }
 
-                const num = parseInt(m[1], 10);
-                const total = parseInt(m[2], 10);
-                const key = num + '/' + total;
+                const [num, total] = best.split('/').map((n) => parseInt(n, 10));
+                const key = best;
                 if (key === this._lastNum && this.scanMatches.length) return; // schon gezeigt
 
                 // 1) Match per Nummer + Set-Gesamtzahl (sehr eindeutig).

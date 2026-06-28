@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/Config.php';
 require_once __DIR__ . '/Database.php';
 
 /**
@@ -20,6 +21,9 @@ final class Auth
 
     private static bool $started = false;
 
+    /** Wie lange Benutzer angemeldet bleiben (30 Tage). */
+    private const SESSION_LIFETIME = 60 * 60 * 24 * 30;
+
     /** Startet die Session (idempotent). Muss vor jeder Ausgabe erfolgen. */
     public static function start(): void
     {
@@ -27,8 +31,25 @@ final class Auth
             self::$started = true;
             return;
         }
+
+        $lifetime = self::SESSION_LIFETIME;
+
+        // Eigener Session-Ordner: Auf Ubuntu/Debian raeumt ein System-Cron die
+        // PHP-Standard-Sessions in /var/lib/php/sessions sonst schon nach ~24 min
+        // weg – unabhaengig von gc_maxlifetime. Ein eigenes Verzeichnis umgeht das.
+        $dir = Config::DATA_DIR . '/sessions';
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0770, true);
+        }
+        if (is_dir($dir) && is_writable($dir)) {
+            session_save_path($dir);
+            ini_set('session.gc_maxlifetime', (string) $lifetime);
+            ini_set('session.gc_probability', '1');
+            ini_set('session.gc_divisor', '100');
+        }
+
         session_set_cookie_params([
-            'lifetime' => 0,
+            'lifetime' => $lifetime,
             'path'     => '/',
             'httponly' => true,
             'samesite' => 'Lax',
@@ -37,6 +58,21 @@ final class Auth
         ]);
         session_name('pokelog_session');
         session_start();
+
+        // Gleitende Sitzung: Cookie-Ablauf bei jeder Anfrage erneuern, solange
+        // jemand eingeloggt ist -> aktive Nutzer bleiben dauerhaft angemeldet.
+        if (!empty($_SESSION['uid']) && !headers_sent()) {
+            $p = session_get_cookie_params();
+            @setcookie(session_name(), session_id(), [
+                'expires'  => time() + $lifetime,
+                'path'     => $p['path'] ?: '/',
+                'domain'   => $p['domain'] ?? '',
+                'secure'   => $p['secure'] ?? false,
+                'httponly' => true,
+                'samesite' => $p['samesite'] ?? 'Lax',
+            ]);
+        }
+
         self::$started = true;
     }
 
